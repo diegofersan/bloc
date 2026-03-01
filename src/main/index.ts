@@ -1,6 +1,8 @@
 import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme } from 'electron'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, writeFileSync, chmodSync } from 'fs'
+import { spawn } from 'child_process'
+import { tmpdir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import pkg from 'electron-updater'
 const { autoUpdater } = pkg
@@ -47,6 +49,57 @@ if (!gotTheLock) {
     const img = nativeImage.createFromBuffer(Buffer.from(svg))
     img.setTemplateImage(true)
     return img
+  }
+
+  function installMacUpdate(zipPath: string): void {
+    const appPath = app.getPath('exe').replace(/\/Contents\/MacOS\/.*$/, '')
+    const appName = 'Bloc'
+    const pid = process.pid
+
+    const script = `#!/bin/bash
+# Wait for the app to quit
+while kill -0 ${pid} 2>/dev/null; do sleep 0.5; done
+sleep 1
+
+TEMP_DIR=$(mktemp -d)
+unzip -o "${zipPath}" -d "$TEMP_DIR"
+
+# Find the .app in extracted dir
+NEW_APP=$(find "$TEMP_DIR" -name "*.app" -maxdepth 1 -type d | head -1)
+
+if [ -z "$NEW_APP" ]; then
+  rm -rf "$TEMP_DIR"
+  exit 1
+fi
+
+# Swap the app
+rm -rf "${appPath}"
+mv "$NEW_APP" "${appPath}"
+
+# Ad-hoc re-sign
+codesign --force --deep --sign - "${appPath}"
+
+# Remove quarantine
+xattr -dr com.apple.quarantine "${appPath}"
+
+# Relaunch
+open "${appPath}"
+
+# Cleanup
+rm -rf "$TEMP_DIR"
+`
+
+    const scriptPath = join(tmpdir(), `${appName}-update.sh`)
+    writeFileSync(scriptPath, script, 'utf-8')
+    chmodSync(scriptPath, 0o755)
+
+    const child = spawn('/bin/bash', [scriptPath], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    child.unref()
+
+    app.quit()
   }
 
   function createWindow(): void {
@@ -135,19 +188,26 @@ if (!gotTheLock) {
     // Auto-update (production only)
     if (!is.dev) {
       autoUpdater.autoDownload = true
-      autoUpdater.autoInstallOnAppQuit = true
+      autoUpdater.autoInstallOnAppQuit = false
+      let downloadedZipPath: string | null = null
+
       autoUpdater.on('update-available', (info) => {
         mainWindow?.webContents.send('update-available', info.version)
       })
       autoUpdater.on('update-downloaded', (info) => {
+        downloadedZipPath = info.downloadedFile
         mainWindow?.webContents.send('update-downloaded', info.version)
       })
       autoUpdater.checkForUpdatesAndNotify()
-    }
 
-    ipcMain.on('install-update', () => {
-      autoUpdater.quitAndInstall()
-    })
+      ipcMain.on('install-update', () => {
+        if (process.platform === 'darwin' && downloadedZipPath) {
+          installMacUpdate(downloadedZipPath)
+        } else {
+          autoUpdater.quitAndInstall()
+        }
+      })
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
