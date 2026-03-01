@@ -35,6 +35,25 @@ if (process.contextIsolated) {
       },
       installUpdate: () => {
         ipcRenderer.send('install-update')
+      },
+      icloud: {
+        checkAvailability: () => ipcRenderer.invoke('icloud:check-availability'),
+        readDay: (date: string) => ipcRenderer.invoke('icloud:read-day', date),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        writeDay: (data: any) => ipcRenderer.invoke('icloud:write-day', data),
+        readAllDays: () => ipcRenderer.invoke('icloud:read-all-days'),
+        listDays: () => ipcRenderer.invoke('icloud:list-days'),
+        watchDates: (dates: string[]) => ipcRenderer.invoke('icloud:watch-dates', dates),
+        stopWatching: () => ipcRenderer.invoke('icloud:stop-watching'),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onFileChanged: (callback: (data: any) => void) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
+          ipcRenderer.on('icloud:file-changed', handler)
+          return () => {
+            ipcRenderer.removeListener('icloud:file-changed', handler)
+          }
+        }
       }
     })
   } catch (error) {

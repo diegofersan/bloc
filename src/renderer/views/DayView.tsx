@@ -8,6 +8,7 @@ import { useTaskStore, type Task } from '../stores/taskStore'
 import TaskEditor from '../components/TaskEditor'
 import DistractionItem from '../components/DistractionItem'
 import PomodoroTimer from '../components/PomodoroTimer'
+import { loadDayFromICloud, watchDate } from '../services/syncService'
 
 function DistractionPanel({ date }: { date: string }) {
   const distractionInputRef = useRef<HTMLInputElement>(null)
@@ -160,6 +161,13 @@ export default function DayView() {
 
   const allDistractions = useTaskStore((s) => s.distractions)
   const distractionCount = (allDistractions[date!] || []).filter((d) => d.status === 'pending').length
+
+  // Load from iCloud and start watching when date changes
+  useEffect(() => {
+    if (!date) return
+    loadDayFromICloud(date)
+    watchDate(date)
+  }, [date])
 
   // Escape to go back
   useEffect(() => {

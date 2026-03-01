@@ -8,6 +8,7 @@ import SettingsView from './views/SettingsView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import Toast from './components/Toast'
 import { useTaskStore } from './stores/taskStore'
+import { initSync, cleanup as cleanupSync } from './services/syncService'
 
 declare global {
   interface Window {
@@ -19,6 +20,16 @@ declare global {
       onUpdateAvailable: (callback: (version: string) => void) => () => void
       onUpdateDownloaded: (callback: (version: string) => void) => () => void
       installUpdate: () => void
+      icloud: {
+        checkAvailability: () => Promise<{ available: boolean; path: string }>
+        readDay: (date: string) => Promise<unknown>
+        writeDay: (data: unknown) => Promise<boolean>
+        readAllDays: () => Promise<unknown[]>
+        listDays: () => Promise<string[]>
+        watchDates: (dates: string[]) => Promise<boolean>
+        stopWatching: () => Promise<boolean>
+        onFileChanged: (callback: (data: unknown) => void) => () => void
+      }
     }
   }
 }
@@ -97,6 +108,12 @@ export default function App() {
       cleanupAvailable?.()
       cleanupDownloaded?.()
     }
+  }, [])
+
+  // iCloud sync init
+  useEffect(() => {
+    initSync()
+    return () => cleanupSync()
   }, [])
 
   // Cleanup old distractions on mount
