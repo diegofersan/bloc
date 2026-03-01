@@ -8,6 +8,8 @@ import SettingsView from './views/SettingsView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import Toast from './components/Toast'
 import { useTaskStore } from './stores/taskStore'
+import { useSiteBlockerStore } from './stores/siteBlockerStore'
+import { usePomodoroStore, type PomodoroStatus } from './stores/pomodoroStore'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
 
 declare global {
@@ -29,6 +31,12 @@ declare global {
         watchDates: (dates: string[]) => Promise<boolean>
         stopWatching: () => Promise<boolean>
         onFileChanged: (callback: (data: unknown) => void) => () => void
+      }
+      siteBlocker: {
+        enable: (sites: string[]) => Promise<boolean>
+        disable: () => Promise<boolean>
+        isActive: () => Promise<boolean>
+        cleanup: () => Promise<void>
       }
     }
   }
@@ -115,6 +123,36 @@ export default function App() {
     initSync()
     return () => cleanupSync()
   }, [])
+
+  // Site blocker: react to pomodoro status changes
+  const pomodoroStatus = usePomodoroStore((s) => s.status)
+  const blockDuringPomodoro = useSiteBlockerStore((s) => s.blockDuringPomodoro)
+  const blockedSites = useSiteBlockerStore((s) => s.blockedSites)
+  const setIsBlocking = useSiteBlockerStore((s) => s.setIsBlocking)
+
+  const prevPomodoroStatus = useRef<PomodoroStatus>('idle')
+
+  useEffect(() => {
+    const prev = prevPomodoroStatus.current
+    prevPomodoroStatus.current = pomodoroStatus
+
+    if (!blockDuringPomodoro || blockedSites.length === 0) return
+
+    async function handleStatusChange() {
+      // Starting work: enable blocking
+      if (pomodoroStatus === 'working' && prev !== 'working') {
+        const ok = await window.bloc?.siteBlocker.enable(blockedSites)
+        if (ok) setIsBlocking(true)
+      }
+      // Leaving work (break or idle): disable blocking
+      if (pomodoroStatus !== 'working' && prev === 'working') {
+        const ok = await window.bloc?.siteBlocker.disable()
+        if (ok) setIsBlocking(false)
+      }
+    }
+
+    handleStatusChange()
+  }, [pomodoroStatus, blockDuringPomodoro, blockedSites, setIsBlocking])
 
   // Cleanup old distractions on mount
   useEffect(() => {

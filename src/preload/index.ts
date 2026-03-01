@@ -54,6 +54,12 @@ if (process.contextIsolated) {
             ipcRenderer.removeListener('icloud:file-changed', handler)
           }
         }
+      },
+      siteBlocker: {
+        enable: (sites: string[]) => ipcRenderer.invoke('site-blocker:enable', sites),
+        disable: () => ipcRenderer.invoke('site-blocker:disable'),
+        isActive: () => ipcRenderer.invoke('site-blocker:is-active'),
+        cleanup: () => ipcRenderer.invoke('site-blocker:cleanup')
       }
     })
   } catch (error) {

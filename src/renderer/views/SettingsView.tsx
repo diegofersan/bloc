@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Check } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useSettingsStore, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
+import { useSiteBlockerStore } from '../stores/siteBlockerStore'
 
 const providers: { id: AIProvider; name: string; description: string }[] = [
   { id: 'openai', name: 'OpenAI', description: 'GPT-4o & mais' },
@@ -23,6 +24,8 @@ export default function SettingsView() {
   const { provider, apiKey, model, setProvider, setApiKey, setModel } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
+  const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
+  const [newSite, setNewSite] = useState('')
   const [showKey, setShowKey] = useState(false)
   const appVersion = window.bloc?.getAppVersion() ?? ''
 
@@ -160,6 +163,90 @@ export default function SettingsView() {
                 />
               </div>
             </div>
+          </section>
+
+          <hr className="border-border my-8" />
+
+          {/* Site Blocker Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Bloqueio de Sites</h3>
+
+          <section className="mb-0">
+            {/* Toggle */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <label className="text-sm font-medium text-text-secondary">Bloquear durante Pomodoro</label>
+                <p className="text-xs text-text-muted mt-0.5">Bloqueia sites distractivos durante sessões de foco</p>
+              </div>
+              <button
+                onClick={() => setBlockDuringPomodoro(!blockDuringPomodoro)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${
+                  blockDuringPomodoro ? 'bg-accent' : 'bg-bg-tertiary'
+                }`}
+              >
+                <motion.div
+                  className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                  animate={{ x: blockDuringPomodoro ? 16 : 0 }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                />
+              </button>
+            </div>
+
+            {/* Add site input */}
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={newSite}
+                onChange={(e) => setNewSite(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newSite.trim()) {
+                    addSite(newSite)
+                    setNewSite('')
+                  }
+                }}
+                placeholder="ex: twitter.com"
+                className="flex-1 rounded-lg bg-bg-secondary border border-border px-4 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              />
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  if (newSite.trim()) {
+                    addSite(newSite)
+                    setNewSite('')
+                  }
+                }}
+                className="px-3 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors"
+              >
+                <Plus size={16} />
+              </motion.button>
+            </div>
+
+            {/* Sites list */}
+            {blockedSites.length > 0 ? (
+              <div className="space-y-1.5">
+                {blockedSites.map((site) => (
+                  <div
+                    key={site}
+                    className="flex items-center justify-between rounded-lg bg-bg-secondary border border-border px-4 py-2.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Shield size={14} className="text-text-muted" />
+                      <span className="text-sm text-text-primary">{site}</span>
+                    </div>
+                    <motion.button
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => removeSite(site)}
+                      className="p-1 rounded text-text-muted hover:text-red-500 transition-colors"
+                    >
+                      <X size={14} />
+                    </motion.button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">Nenhum site bloqueado</p>
+            )}
           </section>
 
           <hr className="border-border my-8" />
