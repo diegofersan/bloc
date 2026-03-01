@@ -3,7 +3,7 @@ import { Sparkles, X, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { expandTask } from '../services/aiService'
+import { expandTaskV2 } from '../services/expansionPipeline'
 
 interface EditableTaskRowProps {
   task: Task
@@ -97,8 +97,8 @@ export default function EditableTaskRow({
     setError(null)
     setTaskExpanding(date, task.id, true)
     try {
-      const subtaskTexts = await expandTask(task.text, provider, apiKey, model)
-      addSubtasks(date, task.id, subtaskTexts)
+      const results = await expandTaskV2(task.text, date, task.id, provider, apiKey, model)
+      addSubtasks(date, task.id, results.map(r => r.text))
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao expandir tarefa'
       setError(message)

@@ -17,7 +17,7 @@ const USER_PROMPT = (task: string) =>
 
 const MAX_SUBTASKS = 6
 
-async function callOpenAI(
+export async function callOpenAI(
   systemMsg: string,
   userMsg: string,
   apiKey: string,
@@ -48,7 +48,7 @@ async function callOpenAI(
   return data.choices[0].message.content
 }
 
-async function callAnthropic(
+export async function callAnthropic(
   systemMsg: string,
   userMsg: string,
   apiKey: string,
@@ -79,7 +79,7 @@ async function callAnthropic(
   return data.content[0].text
 }
 
-async function callGemini(
+export async function callGemini(
   systemMsg: string,
   userMsg: string,
   apiKey: string,
@@ -106,7 +106,7 @@ async function callGemini(
   return data.candidates[0].content.parts[0].text
 }
 
-function parseSubtasks(raw: string): string[] {
+export function parseSubtasks(raw: string): string[] {
   // Strip markdown fences and any surrounding text to find the JSON array
   let cleaned = raw.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim()
 
