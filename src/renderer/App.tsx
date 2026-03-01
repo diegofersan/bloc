@@ -78,6 +78,37 @@ function PomodoroRouteGuard() {
   return null
 }
 
+function PomodoroReturnBar() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const status = usePomodoroStore((s) => s.status)
+  const pomodoroDate = usePomodoroStore((s) => s.pomodoroDate)
+  const secondsRemaining = usePomodoroStore((s) => s.secondsRemaining)
+
+  if (status === 'idle' || !pomodoroDate) return null
+  if (location.pathname === `/day/${pomodoroDate}`) return null
+
+  const m = Math.floor(secondsRemaining / 60)
+  const s = secondsRemaining % 60
+  const time = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  const statusColor = status === 'working' ? 'text-accent' : 'text-success'
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: 0.2 }}
+      onClick={() => navigate(`/day/${pomodoroDate}`)}
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-bg-secondary border border-border shadow-lg hover:bg-bg-hover transition-colors cursor-pointer"
+    >
+      <Play size={14} className={statusColor} />
+      <span className={`text-xs font-medium tabular-nums ${statusColor}`}>{time}</span>
+      <span className="text-xs font-medium text-text-secondary">Voltar ao trabalho</span>
+    </motion.button>
+  )
+}
+
 function AnimatedRoutes() {
   const location = useLocation()
 
@@ -147,8 +178,25 @@ export default function App() {
     return () => cleanupSync()
   }, [])
 
-  // Site blocker: react to pomodoro status changes
+  // Pomodoro state for tray + site blocker
   const pomodoroStatus = usePomodoroStore((s) => s.status)
+  const pomodoroSeconds = usePomodoroStore((s) => s.secondsRemaining)
+  const pomodoroIsPaused = usePomodoroStore((s) => s.isPaused)
+
+  // Global tray update (always mounted, survives view changes)
+  useEffect(() => {
+    if (pomodoroStatus === 'idle') {
+      window.bloc?.updatePomodoroTray(null, null)
+      return
+    }
+    const m = Math.floor(pomodoroSeconds / 60)
+    const s = pomodoroSeconds % 60
+    const time = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    const pauseIndicator = pomodoroIsPaused ? ' ⏸' : ''
+    window.bloc?.updatePomodoroTray(`${time}${pauseIndicator}`, pomodoroStatus)
+  }, [pomodoroStatus, pomodoroSeconds, pomodoroIsPaused])
+
+  // Site blocker: react to pomodoro status changes
   const blockDuringPomodoro = useSiteBlockerStore((s) => s.blockDuringPomodoro)
   const blockedSites = useSiteBlockerStore((s) => s.blockedSites)
   const setIsBlocking = useSiteBlockerStore((s) => s.setIsBlocking)
@@ -250,6 +298,7 @@ export default function App() {
         <NavigationListener />
         <PomodoroRouteGuard />
         <AnimatedRoutes />
+        <PomodoroReturnBar />
         <QuickCaptureOverlay
           visible={showCapture}
           onClose={() => setShowCapture(false)}

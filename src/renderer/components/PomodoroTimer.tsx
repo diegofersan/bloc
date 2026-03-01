@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Play, Pause } from 'lucide-react'
+import { Play, Pause, Square, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { playWorkDoneSound, playBreakDoneSound, playCountdownTick } from '../services/notificationSound'
@@ -16,9 +16,13 @@ export default function PomodoroTimer() {
   const startWork = usePomodoroStore((s) => s.startWork)
   const pause = usePomodoroStore((s) => s.pause)
   const resume = usePomodoroStore((s) => s.resume)
+  const stop = usePomodoroStore((s) => s.stop)
   const tick = usePomodoroStore((s) => s.tick)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { date } = useParams<{ date: string }>()
+
+  const [confirmingStop, setConfirmingStop] = useState(false)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     if ((status === 'working' || status === 'break') && !isPaused) {
@@ -42,22 +46,6 @@ export default function PomodoroTimer() {
     }
   }, [status])
 
-  // Tray update
-  useEffect(() => {
-    if (status === 'idle') {
-      window.bloc?.updatePomodoroTray(null, null)
-      return
-    }
-    const time = formatTime(secondsRemaining)
-    const pauseIndicator = isPaused ? ' ⏸' : ''
-    window.bloc?.updatePomodoroTray(`${time}${pauseIndicator}`, status)
-  }, [status, secondsRemaining, isPaused])
-
-  // Cleanup tray on unmount
-  useEffect(() => {
-    return () => window.bloc?.updatePomodoroTray(null, null)
-  }, [])
-
   // Countdown tick in last 10 seconds
   useEffect(() => {
     if (secondsRemaining <= 10 && secondsRemaining > 0 && !isPaused && status !== 'idle') {
@@ -65,32 +53,68 @@ export default function PomodoroTimer() {
     }
   }, [secondsRemaining, isPaused, status])
 
+  // Cleanup confirm timer
+  useEffect(() => {
+    return () => {
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+    }
+  }, [])
+
+  function handleStop() {
+    if (confirmingStop) {
+      setConfirmingStop(false)
+      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+      stop()
+    } else {
+      setConfirmingStop(true)
+      confirmTimerRef.current = setTimeout(() => setConfirmingStop(false), 3000)
+    }
+  }
+
   const isActive = status !== 'idle'
   const statusColor = status === 'working' ? 'text-accent' : status === 'break' ? 'text-success' : 'text-text-muted'
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-center gap-0.5">
       <AnimatePresence mode="wait">
         {isActive ? (
-          <motion.button
+          <motion.div
             key="active"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.15 }}
-            onClick={isPaused ? resume : pause}
-            aria-label={isPaused ? 'Retomar timer' : 'Pausar timer'}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+            className="flex items-center gap-0.5"
           >
-            {isPaused ? (
-              <Play size={14} className={statusColor} />
-            ) : (
-              <Pause size={14} className={statusColor} />
-            )}
-            <span role="timer" aria-live="off" className={`text-xs font-medium tabular-nums ${statusColor}`}>
-              {formatTime(secondsRemaining)}
-            </span>
-          </motion.button>
+            {/* Play/Pause */}
+            <button
+              onClick={isPaused ? resume : pause}
+              aria-label={isPaused ? 'Retomar timer' : 'Pausar timer'}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-bg-hover transition-colors"
+            >
+              {isPaused ? (
+                <Play size={14} className={statusColor} />
+              ) : (
+                <Pause size={14} className={statusColor} />
+              )}
+              <span role="timer" aria-live="off" className={`text-xs font-medium tabular-nums ${statusColor}`}>
+                {formatTime(secondsRemaining)}
+              </span>
+            </button>
+
+            {/* Stop (with confirm) */}
+            <button
+              onClick={handleStop}
+              aria-label={confirmingStop ? 'Confirmar parar Pomodoro' : 'Parar Pomodoro'}
+              className="p-1 rounded hover:bg-bg-hover transition-colors"
+            >
+              {confirmingStop ? (
+                <Check size={12} className="text-error" />
+              ) : (
+                <Square size={12} className="text-text-muted" />
+              )}
+            </button>
+          </motion.div>
         ) : (
           <motion.button
             key="idle"
