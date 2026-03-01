@@ -26,6 +26,9 @@ jobs:
       - run: npm ci
 
       - run: npm run build
+        env:
+          MAIN_VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          MAIN_VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
 
       - name: Build & Publish (macOS)
         if: matrix.os == 'macos-latest'
