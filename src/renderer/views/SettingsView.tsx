@@ -32,7 +32,7 @@ export default function SettingsView() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/')}
           aria-label="Voltar"
           className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
