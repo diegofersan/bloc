@@ -55,6 +55,29 @@ function NavigationListener() {
   return null
 }
 
+function PomodoroRouteGuard() {
+  const location = useLocation()
+  const status = usePomodoroStore((s) => s.status)
+  const pomodoroDate = usePomodoroStore((s) => s.pomodoroDate)
+  const autoPaused = usePomodoroStore((s) => s.autoPaused)
+  const autoPause = usePomodoroStore((s) => s.autoPause)
+  const autoResume = usePomodoroStore((s) => s.autoResume)
+
+  useEffect(() => {
+    if (status === 'idle' || !pomodoroDate) return
+
+    const isOnPomodoroDay = location.pathname === `/day/${pomodoroDate}`
+
+    if (!isOnPomodoroDay) {
+      autoPause()
+    } else if (autoPaused) {
+      autoResume()
+    }
+  }, [location.pathname, status, pomodoroDate, autoPaused, autoPause, autoResume])
+
+  return null
+}
+
 function AnimatedRoutes() {
   const location = useLocation()
 
@@ -225,6 +248,7 @@ export default function App() {
     <HashRouter>
       <div className="h-full bg-bg-primary text-text-primary">
         <NavigationListener />
+        <PomodoroRouteGuard />
         <AnimatedRoutes />
         <QuickCaptureOverlay
           visible={showCapture}

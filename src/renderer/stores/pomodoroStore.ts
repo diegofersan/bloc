@@ -9,18 +9,22 @@ interface PomodoroState {
   breakDuration: number
   status: PomodoroStatus
   isPaused: boolean
+  autoPaused: boolean
+  pomodoroDate: string | null
   secondsRemaining: number
   totalSeconds: number
   startedAt: number | null
   expectedEndAt: number | null
   setWorkDuration: (minutes: number) => void
   setBreakDuration: (minutes: number) => void
-  startWork: () => void
+  startWork: (date: string) => void
   startBreak: () => void
   tick: () => void
   stop: () => void
   pause: () => void
   resume: () => void
+  autoPause: () => void
+  autoResume: () => void
   completedPomodoros: Record<string, number>
   getCompletedForDate: (date: string) => number
   getDatesWithPomodoros: () => string[]
@@ -34,6 +38,8 @@ export const usePomodoroStore = create<PomodoroState>()(
       completedPomodoros: {},
       status: 'idle',
       isPaused: false,
+      autoPaused: false,
+      pomodoroDate: null,
       secondsRemaining: 0,
       totalSeconds: 0,
       startedAt: null,
@@ -43,16 +49,18 @@ export const usePomodoroStore = create<PomodoroState>()(
 
       setBreakDuration: (minutes: number) => set({ breakDuration: minutes }),
 
-      startWork: () => {
+      startWork: (date: string) => {
         const seconds = get().workDuration * 60
         const now = Date.now()
         set({
           status: 'working',
           isPaused: false,
+          autoPaused: false,
           secondsRemaining: seconds,
           totalSeconds: seconds,
           startedAt: now,
-          expectedEndAt: now + seconds * 1000
+          expectedEndAt: now + seconds * 1000,
+          pomodoroDate: date
         })
       },
 
@@ -62,6 +70,7 @@ export const usePomodoroStore = create<PomodoroState>()(
         set({
           status: 'break',
           isPaused: false,
+          autoPaused: false,
           secondsRemaining: seconds,
           totalSeconds: seconds,
           startedAt: now,
@@ -86,6 +95,7 @@ export const usePomodoroStore = create<PomodoroState>()(
             set({
               status: 'break',
               isPaused: false,
+              autoPaused: false,
               secondsRemaining: seconds,
               totalSeconds: seconds,
               startedAt: now,
@@ -96,10 +106,12 @@ export const usePomodoroStore = create<PomodoroState>()(
             set({
               status: 'idle',
               isPaused: false,
+              autoPaused: false,
               secondsRemaining: 0,
               totalSeconds: 0,
               startedAt: null,
-              expectedEndAt: null
+              expectedEndAt: null,
+              pomodoroDate: null
             })
           }
         }
@@ -108,19 +120,38 @@ export const usePomodoroStore = create<PomodoroState>()(
       stop: () => set({
         status: 'idle',
         isPaused: false,
+        autoPaused: false,
         secondsRemaining: 0,
         totalSeconds: 0,
         startedAt: null,
-        expectedEndAt: null
+        expectedEndAt: null,
+        pomodoroDate: null
       }),
 
-      pause: () => set({ isPaused: true }),
+      pause: () => set({ isPaused: true, autoPaused: false }),
 
       resume: () => {
         const { secondsRemaining } = get()
         const now = Date.now()
         set({
           isPaused: false,
+          autoPaused: false,
+          expectedEndAt: now + secondsRemaining * 1000
+        })
+      },
+
+      autoPause: () => {
+        if (get().isPaused) return
+        set({ isPaused: true, autoPaused: true })
+      },
+
+      autoResume: () => {
+        if (!get().autoPaused) return
+        const { secondsRemaining } = get()
+        const now = Date.now()
+        set({
+          isPaused: false,
+          autoPaused: false,
           expectedEndAt: now + secondsRemaining * 1000
         })
       },
