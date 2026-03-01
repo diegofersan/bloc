@@ -17,12 +17,16 @@ function yToTime(y: number): number {
   return (shiftedMinutes + START_HOUR * 60) % 1440
 }
 
+const DEFAULT_GUTTER_WIDTH = 56
+
 interface TimeBlockCreatorProps {
   gridRef: React.RefObject<HTMLDivElement | null>
   onCreateStart: (startTime: number, endTime: number) => void
+  gutterWidth?: number
 }
 
-export default function TimeBlockCreator({ gridRef, onCreateStart }: TimeBlockCreatorProps) {
+export default function TimeBlockCreator({ gridRef, onCreateStart, gutterWidth }: TimeBlockCreatorProps) {
+  const gutter = gutterWidth ?? DEFAULT_GUTTER_WIDTH
   const [isCreating, setIsCreating] = useState(false)
   const [previewStart, setPreviewStart] = useState(0)
   const [previewEnd, setPreviewEnd] = useState(0)
@@ -49,7 +53,7 @@ export default function TimeBlockCreator({ gridRef, onCreateStart }: TimeBlockCr
       // Ignore clicks in the hour gutter
       if (gridRef.current) {
         const rect = gridRef.current.getBoundingClientRect()
-        if (e.clientX - rect.left < 56) return
+        if (e.clientX - rect.left < gutter) return
       }
 
       const minutes = getMinutesFromY(e.clientY)
@@ -58,7 +62,7 @@ export default function TimeBlockCreator({ gridRef, onCreateStart }: TimeBlockCr
       setPreviewEnd(minutes + SNAP_MINUTES)
       createRef.current = { startY: e.clientY, startMinutes: minutes }
     },
-    [getMinutesFromY, gridRef]
+    [getMinutesFromY, gridRef, gutter]
   )
 
   useEffect(() => {
@@ -108,7 +112,7 @@ export default function TimeBlockCreator({ gridRef, onCreateStart }: TimeBlockCr
       {isCreating && height > 0 && (
         <div
           className="absolute right-2 z-20 rounded-lg bg-accent/15 border border-accent/30 pointer-events-none"
-          style={{ top, height, left: 56 }}
+          style={{ top, height, left: gutter }}
         >
           <div className="px-2 pt-1 text-[10px] text-accent font-medium">
             {formatTime(Math.min(previewStart, previewEnd))} – {formatTime(Math.max(previewStart, previewEnd))}

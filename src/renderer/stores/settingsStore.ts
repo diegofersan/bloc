@@ -13,9 +13,13 @@ interface SettingsState {
   provider: AIProvider
   apiKey: string
   model: string
+  primaryTimezone: string
+  secondaryTimezone: string | null
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
+  setPrimaryTimezone: (tz: string) => void
+  setSecondaryTimezone: (tz: string | null) => void
   isConfigured: () => boolean
 }
 
@@ -25,6 +29,8 @@ export const useSettingsStore = create<SettingsState>()(
       provider: 'openai',
       apiKey: '',
       model: DEFAULT_MODELS['openai'],
+      primaryTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      secondaryTimezone: null,
 
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
@@ -38,6 +44,14 @@ export const useSettingsStore = create<SettingsState>()(
         set({ model })
       },
 
+      setPrimaryTimezone: (tz) => {
+        set({ primaryTimezone: tz })
+      },
+
+      setSecondaryTimezone: (tz) => {
+        set({ secondaryTimezone: tz })
+      },
+
       isConfigured: () => {
         return get().apiKey.length > 0
       }
@@ -47,3 +61,18 @@ export const useSettingsStore = create<SettingsState>()(
     }
   )
 )
+
+export function formatTzOffset(tz: string): string {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'shortOffset' })
+  const parts = formatter.formatToParts(now)
+  const offsetPart = parts.find(p => p.type === 'timeZoneName')
+  return offsetPart?.value ?? tz
+}
+
+export function getTzOffsetMinutes(tz: string): number {
+  const now = new Date()
+  const utcStr = now.toLocaleString('en-US', { timeZone: 'UTC' })
+  const tzStr = now.toLocaleString('en-US', { timeZone: tz })
+  return (new Date(tzStr).getTime() - new Date(utcStr).getTime()) / 60000
+}

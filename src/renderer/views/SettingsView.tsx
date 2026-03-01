@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { useSettingsStore, type AIProvider } from '../stores/settingsStore'
+import { useSettingsStore, formatTzOffset, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useSiteBlockerStore } from '../stores/siteBlockerStore'
 import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
@@ -11,6 +11,18 @@ const providers: { id: AIProvider; name: string; description: string }[] = [
   { id: 'openai', name: 'OpenAI', description: 'GPT-4o & mais' },
   { id: 'anthropic', name: 'Anthropic', description: 'Claude Sonnet & mais' },
   { id: 'gemini', name: 'Gemini', description: 'Gemini Flash & mais' }
+]
+
+const COMMON_TIMEZONES = [
+  'Pacific/Auckland', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata',
+  'Asia/Dubai', 'Europe/Moscow', 'Europe/Istanbul', 'Europe/Athens',
+  'Europe/Berlin', 'Europe/Paris', 'Europe/Lisbon', 'Europe/London',
+  'Atlantic/Azores', 'America/Sao_Paulo', 'America/Buenos_Aires',
+  'America/New_York', 'America/Chicago', 'America/Denver',
+  'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu',
+  'Africa/Cairo', 'Africa/Lagos', 'Asia/Singapore', 'Asia/Seoul',
+  'Australia/Sydney', 'America/Toronto', 'America/Mexico_City',
+  'Europe/Madrid', 'Europe/Rome'
 ]
 
 const shortcuts = [
@@ -22,7 +34,7 @@ const shortcuts = [
 
 export default function SettingsView() {
   const navigate = useNavigate()
-  const { provider, apiKey, model, setProvider, setApiKey, setModel } = useSettingsStore()
+  const { provider, apiKey, model, setProvider, setApiKey, setModel, primaryTimezone, secondaryTimezone, setPrimaryTimezone, setSecondaryTimezone } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
@@ -405,6 +417,44 @@ export default function SettingsView() {
                 )}
               </div>
             )}
+          </section>
+
+          <hr className="border-border my-8" />
+
+          {/* Timezone Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Fusos Horários</h3>
+
+          <section className="mb-0">
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-text-secondary mb-2">Fuso horário primário</label>
+              <select
+                value={primaryTimezone}
+                onChange={(e) => setPrimaryTimezone(e.target.value)}
+                className="w-full rounded-lg bg-bg-secondary border border-border px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-colors"
+              >
+                {COMMON_TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz} ({formatTzOffset(tz)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">Fuso horário secundário</label>
+              <select
+                value={secondaryTimezone ?? ''}
+                onChange={(e) => setSecondaryTimezone(e.target.value || null)}
+                className="w-full rounded-lg bg-bg-secondary border border-border px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-colors"
+              >
+                <option value="">Nenhum</option>
+                {COMMON_TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz} ({formatTzOffset(tz)})
+                  </option>
+                ))}
+              </select>
+            </div>
           </section>
 
           <hr className="border-border my-8" />
