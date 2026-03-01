@@ -1,6 +1,6 @@
 {
   "name": "bloc",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Bloc - AI-powered task manager with calendar view",
   "type": "module",
   "main": "./out/main/index.js",
@@ -36,7 +36,10 @@
     "mac": {
       "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "identity": null
     },
     "win": {
