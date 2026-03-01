@@ -19,7 +19,7 @@ export default function Toast({
   action?: { label: string; onClick: () => void }
 }) {
   useEffect(() => {
-    if (!visible) return
+    if (!visible || !duration) return
     const timer = setTimeout(onClose, duration)
     return () => clearTimeout(timer)
   }, [visible, duration, onClose])

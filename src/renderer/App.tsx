@@ -63,6 +63,7 @@ function AnimatedRoutes() {
 interface ToastState {
   message: string
   visible: boolean
+  duration?: number
   action?: { label: string; onClick: () => void }
 }
 
@@ -85,6 +86,7 @@ export default function App() {
       setToast({
         message: `Atualização v${version} pronta`,
         visible: true,
+        duration: 0,
         action: {
           label: 'Reiniciar',
           onClick: () => window.bloc?.installUpdate()
@@ -177,6 +179,7 @@ export default function App() {
         <Toast
           message={toast.message}
           visible={toast.visible}
+          duration={toast.duration}
           onClose={() => setToast((t) => ({ ...t, visible: false }))}
           action={toast.action}
         />
