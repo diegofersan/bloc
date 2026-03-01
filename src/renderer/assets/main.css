@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #f8f7f4;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #eeeee9;
+  --color-bg-hover: #e8e8e3;
+
+  --color-border: #d8d8d3;
+  --color-border-light: #c8c8c3;
+
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #666666;
+  --color-text-muted: #999999;
+
+  --color-accent: #6366f1;
+  --color-accent-hover: #4f46e5;
+  --color-accent-subtle: #6366f115;
+
+  --color-success: #16a34a;
+  --color-error: #dc2626;
+  --color-warning: #d97706;
+  --color-ai: #8b5cf6;
+  --color-ai-hover: #7c3aed;
+
+  --color-distraction: #f59e0b;
+  --color-distraction-subtle: rgba(245, 158, 11, 0.15);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui, sans-serif;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    -webkit-app-region: no-drag;
+  }
+
+  .titlebar-drag {
+    -webkit-app-region: drag;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-border-light);
+  }
+
+  ::selection {
+    background: rgba(99, 102, 241, 0.2);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .task-editor-input:focus-visible {
+    outline: none;
+    border-bottom: 1.5px solid var(--color-accent);
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: rgba(240, 240, 235, 0.80);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .panel-divider {
+    background: var(--color-border);
+  }
+
+  .panel-divider-active {
+    background: var(--color-accent);
+  }
+
+  .task-editor-input {
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: var(--font-sans);
+    caret-color: var(--color-accent);
+  }
+
+  .task-editor-input::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  .task-row {
+    border-radius: 6px;
+    transition: background-color 0.15s ease;
+  }
+
+  .task-row:hover {
+    background-color: var(--color-bg-hover);
+  }
+
+  .task-row:focus-within .task-actions {
+    opacity: 1;
+  }
+}
