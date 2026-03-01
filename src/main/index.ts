@@ -2,7 +2,8 @@ import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, 
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
-import { autoUpdater } from 'electron-updater'
+import pkg from 'electron-updater'
+const { autoUpdater } = pkg
 
 const gotTheLock = app.requestSingleInstanceLock()
 
