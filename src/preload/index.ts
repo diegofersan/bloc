@@ -60,6 +60,23 @@ if (process.contextIsolated) {
         disable: () => ipcRenderer.invoke('site-blocker:disable'),
         isActive: () => ipcRenderer.invoke('site-blocker:is-active'),
         cleanup: () => ipcRenderer.invoke('site-blocker:cleanup')
+      },
+      gcal: {
+        startAuth: () => ipcRenderer.invoke('gcal:start-auth'),
+        isAuthenticated: () => ipcRenderer.invoke('gcal:is-authenticated'),
+        disconnect: () => ipcRenderer.invoke('gcal:disconnect'),
+        listCalendars: () => ipcRenderer.invoke('gcal:list-calendars'),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        listEvents: (calendarId: string, opts?: any) =>
+          ipcRenderer.invoke('gcal:list-events', calendarId, opts),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        createEvent: (calendarId: string, eventData: any) =>
+          ipcRenderer.invoke('gcal:create-event', calendarId, eventData),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        updateEvent: (calendarId: string, eventId: string, eventData: any) =>
+          ipcRenderer.invoke('gcal:update-event', calendarId, eventId, eventData),
+        deleteEvent: (calendarId: string, eventId: string) =>
+          ipcRenderer.invoke('gcal:delete-event', calendarId, eventId)
       }
     })
   } catch (error) {

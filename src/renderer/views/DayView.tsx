@@ -134,8 +134,15 @@ const MIN_PANEL_PCT = 15
 const DIVIDER_STORAGE_KEY = 'bloc-divider-pct'
 const NARROW_BREAKPOINT = 640
 
-export default function DayView() {
-  const { date } = useParams<{ date: string }>()
+interface DayViewProps {
+  date?: string
+  embedded?: boolean
+}
+
+export default function DayView(props: DayViewProps) {
+  const params = useParams<{ date: string }>()
+  const date = props.date || params.date
+  const embedded = props.embedded || false
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -163,14 +170,17 @@ export default function DayView() {
   const distractionCount = (allDistractions[date!] || []).filter((d) => d.status === 'pending').length
 
   // Load from iCloud and start watching when date changes
+  // Skip for embedded mode — composite keys (date__block__id) aren't real dates;
+  // the parent TimelineView handles iCloud sync for the actual date.
   useEffect(() => {
-    if (!date) return
+    if (!date || embedded) return
     loadDayFromICloud(date)
     watchDate(date)
-  }, [date])
+  }, [date, embedded])
 
-  // Escape to go back
+  // Escape to go back (only in standalone mode — timeline handles its own escape)
   useEffect(() => {
+    if (embedded) return
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         navigate('/')
@@ -178,10 +188,11 @@ export default function DayView() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [navigate])
+  }, [navigate, embedded])
 
-  // Alt+Left/Right for day navigation
+  // Alt+Left/Right for day navigation (standalone mode only)
   useEffect(() => {
+    if (embedded) return
     function handleKeyDown(e: KeyboardEvent) {
       if (!date) return
       if (e.altKey && e.key === 'ArrowLeft') {
@@ -196,7 +207,7 @@ export default function DayView() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [date, navigate])
+  }, [date, navigate, embedded])
 
   // Resizable divider drag logic
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -248,14 +259,6 @@ export default function DayView() {
     }
   }, [])
 
-  // Date formatting — shorter on narrow
-  const rawDate = date
-    ? isNarrow
-      ? format(parseISO(date), "EEE, d MMM", { locale: pt })
-      : format(parseISO(date), "EEEE, d 'de' MMMM yyyy", { locale: pt })
-    : ''
-  const formattedDate = rawDate.charAt(0).toUpperCase() + rawDate.slice(1)
-
   const goToPrevDay = useCallback(() => {
     if (!date) return
     navigate(`/day/${format(subDays(parseISO(date), 1), 'yyyy-MM-dd')}`)
@@ -265,6 +268,24 @@ export default function DayView() {
     if (!date) return
     navigate(`/day/${format(addDays(parseISO(date), 1), 'yyyy-MM-dd')}`)
   }, [date, navigate])
+
+  // ─── Embedded mode: tasks only (distractions live on the timeline sidebar) ──
+  // Must return before date formatting — composite keys (date__block__id) aren't valid dates.
+  if (embedded) {
+    return (
+      <div ref={containerRef} className="h-full flex flex-col bg-bg-primary overflow-hidden">
+        <TaskEditor date={date!} tasks={tasks} />
+      </div>
+    )
+  }
+
+  // Date formatting — shorter on narrow
+  const rawDate = date
+    ? isNarrow
+      ? format(parseISO(date), "EEE, d MMM", { locale: pt })
+      : format(parseISO(date), "EEEE, d 'de' MMMM yyyy", { locale: pt })
+    : ''
+  const formattedDate = rawDate.charAt(0).toUpperCase() + rawDate.slice(1)
 
   // ─── Narrow layout (< 640px): tabbed view ────────────────────────
   if (isNarrow) {
@@ -360,7 +381,6 @@ export default function DayView() {
     >
       {/* Left: titlebar + tasks */}
       <div style={{ width: `${leftPct}%` }} className="flex flex-col overflow-hidden">
-        {/* Titlebar */}
         <div className="titlebar-drag shrink-0 flex items-end justify-between pl-5 pr-6 pt-[50px] pb-2">
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <motion.button

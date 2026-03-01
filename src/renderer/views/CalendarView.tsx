@@ -17,6 +17,7 @@ import { ChevronLeft, ChevronRight, Settings, Inbox } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
+import { useTimeBlockStore } from '../stores/timeBlockStore'
 
 const WEEKDAYS_FULL = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'] as const
 const WEEKDAYS_SHORT = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'] as const
@@ -36,6 +37,7 @@ export default function CalendarView() {
   const distractions = useTaskStore((s) => s.distractions)
   const getPendingDistractionCount = useTaskStore((s) => s.getPendingDistractionCount)
   const getCompletedForDate = usePomodoroStore((s) => s.getCompletedForDate)
+  const timeBlocks = useTimeBlockStore((s) => s.blocks)
 
   const pendingCount = getPendingDistractionCount()
 
@@ -52,6 +54,10 @@ export default function CalendarView() {
     }
     return new Set(dates)
   }, [distractions])
+
+  const datesWithTimeBlocks = useMemo(() => {
+    return new Set(Object.keys(timeBlocks).filter((d) => timeBlocks[d].length > 0))
+  }, [timeBlocks])
 
   const calendarDays = useMemo(() => {
     const monthStart = startOfMonth(currentMonth)
@@ -210,6 +216,7 @@ export default function CalendarView() {
                 const today = isToday(day)
                 const hasTasks = datesWithTasks.has(dateStr)
                 const hasDistractions = datesWithDistractions.has(dateStr)
+                const hasTimeBlocks = datesWithTimeBlocks.has(dateStr)
                 const pomodoroCount = getCompletedForDate(dateStr)
 
                 return (
@@ -238,8 +245,9 @@ export default function CalendarView() {
                         {format(day, 'd')}
                       </span>
                     )}
-                    {(hasTasks || hasDistractions) && (
+                    {(hasTasks || hasDistractions || hasTimeBlocks) && (
                       <div className="flex gap-0.5 mt-1">
+                        {hasTimeBlocks && <div className="h-1.5 w-1.5 rounded-full bg-accent" />}
                         {hasTasks && <div className="h-1.5 w-1.5 rounded-full bg-success" />}
                         {hasDistractions && <div className="h-1.5 w-1.5 rounded-full bg-distraction" />}
                       </div>

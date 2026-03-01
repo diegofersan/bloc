@@ -8,6 +8,7 @@ import pkg from 'electron-updater'
 const { autoUpdater } = pkg
 import { registerSyncHandlers } from './ipc/syncHandlers'
 import { registerSiteBlockerHandlers } from './ipc/siteBlockerHandlers'
+import { registerGoogleCalendarHandlers } from './ipc/googleCalendarHandlers'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -163,6 +164,7 @@ rm -rf "$TEMP_DIR"
   app.whenReady().then(() => {
     registerSyncHandlers()
     registerSiteBlockerHandlers()
+    registerGoogleCalendarHandlers()
     createWindow()
 
     tray = new Tray(createTrayIcon())

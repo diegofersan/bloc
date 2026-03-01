@@ -118,4 +118,10 @@
   .task-row:focus-within .task-actions {
     opacity: 1;
   }
+
+  /* Timeline grid */
+  .timeline-grid {
+    position: relative;
+    user-select: none;
+  }
 }

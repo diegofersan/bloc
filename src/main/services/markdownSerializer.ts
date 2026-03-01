@@ -17,12 +17,27 @@ export interface DistractionData {
   processedAt?: number
 }
 
+export type TimeBlockColor = 'indigo' | 'emerald' | 'amber' | 'rose' | 'sky' | 'violet' | 'slate'
+
+export interface TimeBlockData {
+  id: string
+  startTime: number
+  endTime: number
+  title: string
+  color: TimeBlockColor
+  createdAt: number
+  updatedAt: number
+  googleEventId?: string
+  isGoogleReadOnly?: boolean
+}
+
 export interface DayFileData {
   date: string
   pomodoros: number
   updatedAt: number
   tasks: TaskData[]
   distractions: DistractionData[]
+  timeBlocks?: TimeBlockData[]
 }
 
 // --- Serialization ---
@@ -52,6 +67,13 @@ function serializeDistraction(d: DistractionData): string {
   return `- [${d.status}] ${d.text} <!--${meta}-->`
 }
 
+function serializeTimeBlock(b: TimeBlockData): string {
+  let meta = `@id:${b.id} @start:${b.startTime} @end:${b.endTime} @color:${b.color} @created:${b.createdAt} @updated:${b.updatedAt}`
+  if (b.googleEventId) meta += ` @gcalId:${b.googleEventId}`
+  if (b.isGoogleReadOnly) meta += ` @gcalReadOnly:true`
+  return `- ${b.title} <!--${meta}-->`
+}
+
 export function serialize(data: DayFileData): string {
   const lines: string[] = []
 
@@ -79,6 +101,16 @@ export function serialize(data: DayFileData): string {
     lines.push('')
     for (const d of data.distractions) {
       lines.push(serializeDistraction(d))
+    }
+    lines.push('')
+  }
+
+  // Time Blocks
+  if (data.timeBlocks && data.timeBlocks.length > 0) {
+    lines.push('## Blocos de Tempo')
+    lines.push('')
+    for (const b of data.timeBlocks) {
+      lines.push(serializeTimeBlock(b))
     }
     lines.push('')
   }
@@ -226,21 +258,53 @@ function parseDistractionsSection(lines: string[]): DistractionData[] {
   return distractions
 }
 
+function parseTimeBlockLine(line: string): TimeBlockData | null {
+  const match = line.match(/^- (.+?)\s*<!--(.+?)-->/)
+  if (!match) return null
+  const title = match[1].trim()
+  const meta = parseMetaComment(line)
+  if (!meta.start || !meta.end) return null
+  return {
+    id: meta.id || crypto.randomUUID(),
+    startTime: parseInt(meta.start, 10),
+    endTime: parseInt(meta.end, 10),
+    title,
+    color: (meta.color as TimeBlockColor) || 'indigo',
+    createdAt: meta.created ? parseInt(meta.created, 10) : Date.now(),
+    updatedAt: meta.updated ? parseInt(meta.updated, 10) : Date.now(),
+    googleEventId: meta.gcalId,
+    isGoogleReadOnly: meta.gcalReadOnly === 'true'
+  }
+}
+
+function parseTimeBlocksSection(lines: string[]): TimeBlockData[] {
+  const blocks: TimeBlockData[] = []
+  for (const line of lines) {
+    const parsed = parseTimeBlockLine(line)
+    if (parsed) blocks.push(parsed)
+  }
+  return blocks
+}
+
 export function deserialize(content: string): DayFileData {
   const { frontmatter, body } = parseFrontmatter(content)
 
   let tasks: TaskData[] = []
   let distractions: DistractionData[] = []
+  let timeBlocks: TimeBlockData[] = []
 
   // Split body into sections
   const sections = body.split(/^## /m)
   for (const section of sections) {
     if (section.startsWith('Tarefas')) {
-      const lines = section.split('\n').slice(1) // skip the "Tarefas" heading line
+      const lines = section.split('\n').slice(1)
       tasks = parseTasksSection(lines)
     } else if (section.startsWith('Distrações')) {
       const lines = section.split('\n').slice(1)
       distractions = parseDistractionsSection(lines)
+    } else if (section.startsWith('Blocos de Tempo')) {
+      const lines = section.split('\n').slice(1)
+      timeBlocks = parseTimeBlocksSection(lines)
     }
   }
 
@@ -249,6 +313,7 @@ export function deserialize(content: string): DayFileData {
     pomodoros: frontmatter.pomodoros,
     updatedAt: frontmatter.updatedAt,
     tasks,
-    distractions
+    distractions,
+    timeBlocks
   }
 }

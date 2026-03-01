@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Play } from 'lucide-react'
 import CalendarView from './views/CalendarView'
-import DayView from './views/DayView'
+import TimelineView from './views/TimelineView'
 import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
@@ -12,6 +12,8 @@ import { useTaskStore } from './stores/taskStore'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
 import { usePomodoroStore, type PomodoroStatus } from './stores/pomodoroStore'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
+import { startPeriodicSync, stopPeriodicSync } from './services/googleCalendarSync'
+import { useGoogleCalendarStore } from './stores/googleCalendarStore'
 
 declare global {
   interface Window {
@@ -38,6 +40,16 @@ declare global {
         disable: () => Promise<boolean>
         isActive: () => Promise<boolean>
         cleanup: () => Promise<void>
+      }
+      gcal: {
+        startAuth: () => Promise<{ success: boolean; error?: string }>
+        isAuthenticated: () => Promise<boolean>
+        disconnect: () => Promise<{ success: boolean }>
+        listCalendars: () => Promise<{ success: boolean; calendars: Array<{ id: string; summary: string; backgroundColor: string; primary?: boolean }> }>
+        listEvents: (calendarId: string, opts?: Record<string, unknown>) => Promise<{ success: boolean; items: unknown[]; nextSyncToken?: string }>
+        createEvent: (calendarId: string, eventData: unknown) => Promise<{ success: boolean; event?: unknown; error?: string }>
+        updateEvent: (calendarId: string, eventId: string, eventData: unknown) => Promise<{ success: boolean; event?: unknown; error?: string }>
+        deleteEvent: (calendarId: string, eventId: string) => Promise<{ success: boolean; error?: string }>
       }
     }
   }
@@ -114,23 +126,20 @@ function AnimatedRoutes() {
   const location = useLocation()
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={location.pathname}
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.15, ease: 'easeInOut' }}
-        className="h-full"
-      >
-        <Routes location={location}>
-          <Route path="/" element={<CalendarView />} />
-          <Route path="/day/:date" element={<DayView />} />
-          <Route path="/inbox" element={<InboxView />} />
-          <Route path="/settings" element={<SettingsView />} />
-        </Routes>
-      </motion.div>
-    </AnimatePresence>
+    <motion.div
+      key={location.pathname}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.12 }}
+      className="h-full"
+    >
+      <Routes location={location}>
+        <Route path="/" element={<CalendarView />} />
+        <Route path="/day/:date" element={<TimelineView />} />
+        <Route path="/inbox" element={<InboxView />} />
+        <Route path="/settings" element={<SettingsView />} />
+      </Routes>
+    </motion.div>
   )
 }
 
@@ -178,6 +187,19 @@ export default function App() {
     initSync()
     return () => cleanupSync()
   }, [])
+
+  // Google Calendar periodic sync
+  const gcalConnected = useGoogleCalendarStore((s) => s.isConnected)
+  const gcalCalendarId = useGoogleCalendarStore((s) => s.selectedCalendarId)
+
+  useEffect(() => {
+    if (gcalConnected && gcalCalendarId) {
+      startPeriodicSync()
+    } else {
+      stopPeriodicSync()
+    }
+    return () => stopPeriodicSync()
+  }, [gcalConnected, gcalCalendarId])
 
   // Pomodoro state for tray + site blocker
   const pomodoroStatus = usePomodoroStore((s) => s.status)

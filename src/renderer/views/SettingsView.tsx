@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useSettingsStore, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useSiteBlockerStore } from '../stores/siteBlockerStore'
+import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
 
 const providers: { id: AIProvider; name: string; description: string }[] = [
   { id: 'openai', name: 'OpenAI', description: 'GPT-4o & mais' },
@@ -25,8 +26,18 @@ export default function SettingsView() {
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
+  const {
+    isConnected: gcalConnected,
+    selectedCalendarId,
+    calendars: gcalCalendars,
+    setConnected: setGcalConnected,
+    setSelectedCalendar,
+    setCalendars: setGcalCalendars,
+    reset: resetGcal
+  } = useGoogleCalendarStore()
   const [newSite, setNewSite] = useState('')
   const [showKey, setShowKey] = useState(false)
+  const [gcalLoading, setGcalLoading] = useState(false)
   const appVersion = window.bloc?.getAppVersion() ?? ''
 
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640)
@@ -35,6 +46,65 @@ export default function SettingsView() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+
+  // Check Google Calendar auth status on mount
+  useEffect(() => {
+    async function checkAuth() {
+      const authenticated = await window.bloc?.gcal.isAuthenticated()
+      if (authenticated && !gcalConnected) {
+        setGcalConnected(true)
+      } else if (!authenticated && gcalConnected) {
+        resetGcal()
+      }
+    }
+    checkAuth()
+  }, [])
+
+  const [gcalError, setGcalError] = useState<string | null>(null)
+
+  const handleGcalConnect = useCallback(async () => {
+    setGcalLoading(true)
+    setGcalError(null)
+    try {
+      const result = await window.bloc?.gcal.startAuth()
+      if (result?.success) {
+        setGcalConnected(true)
+        // Load calendars after connecting
+        const calResult = await window.bloc?.gcal.listCalendars()
+        if (calResult?.success) {
+          setGcalCalendars(calResult.calendars)
+          // Auto-select primary calendar
+          const primary = calResult.calendars.find((c: { primary?: boolean }) => c.primary)
+          if (primary && !selectedCalendarId) {
+            setSelectedCalendar(primary.id)
+          }
+        }
+      } else {
+        setGcalError(result?.error || 'Falha ao ligar conta Google')
+      }
+    } catch (err) {
+      setGcalError((err as Error).message || 'Erro inesperado')
+    } finally {
+      setGcalLoading(false)
+    }
+  }, [setGcalConnected, setGcalCalendars, selectedCalendarId, setSelectedCalendar])
+
+  const handleGcalDisconnect = useCallback(async () => {
+    await window.bloc?.gcal.disconnect()
+    resetGcal()
+  }, [resetGcal])
+
+  const handleRefreshCalendars = useCallback(async () => {
+    setGcalLoading(true)
+    try {
+      const result = await window.bloc?.gcal.listCalendars()
+      if (result?.success) {
+        setGcalCalendars(result.calendars)
+      }
+    } finally {
+      setGcalLoading(false)
+    }
+  }, [setGcalCalendars])
 
   return (
     <div className="h-full flex flex-col bg-bg-primary">
@@ -246,6 +316,94 @@ export default function SettingsView() {
               </div>
             ) : (
               <p className="text-xs text-text-muted">Nenhum site bloqueado</p>
+            )}
+          </section>
+
+          <hr className="border-border my-8" />
+
+          {/* Google Calendar Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Google Calendar</h3>
+
+          <section className="mb-0">
+            {!gcalConnected ? (
+              <div>
+                <p className="text-xs text-text-muted mb-3">
+                  Sincronize blocos de tempo com o Google Calendar
+                </p>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleGcalConnect}
+                  disabled={gcalLoading}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-50"
+                >
+                  <Calendar size={16} />
+                  {gcalLoading ? 'A ligar...' : 'Ligar conta Google'}
+                </motion.button>
+                {gcalError && (
+                  <p className="mt-2 text-xs text-red-500">{gcalError}</p>
+                )}
+              </div>
+            ) : (
+              <div>
+                {/* Connected status */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-success" />
+                    <span className="text-sm text-text-secondary font-medium">Conta ligada</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={handleRefreshCalendars}
+                      disabled={gcalLoading}
+                      className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
+                      aria-label="Atualizar calendários"
+                    >
+                      <RefreshCw size={14} className={gcalLoading ? 'animate-spin' : ''} />
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={handleGcalDisconnect}
+                      className="p-1.5 rounded-lg text-text-muted hover:text-error transition-colors"
+                      aria-label="Desligar"
+                    >
+                      <LogOut size={14} />
+                    </motion.button>
+                  </div>
+                </div>
+
+                {/* Calendar picker */}
+                {gcalCalendars.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">Calendário</label>
+                    <div className="space-y-1.5">
+                      {gcalCalendars.map((cal) => (
+                        <button
+                          key={cal.id}
+                          onClick={() => setSelectedCalendar(cal.id)}
+                          className={`w-full flex items-center gap-3 rounded-lg px-4 py-2.5 text-left border transition-colors ${
+                            selectedCalendarId === cal.id
+                              ? 'bg-accent/10 border-accent'
+                              : 'bg-bg-secondary border-border hover:border-border-light'
+                          }`}
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full shrink-0"
+                            style={{ backgroundColor: cal.backgroundColor }}
+                          />
+                          <span className="text-sm text-text-primary truncate">{cal.summary}</span>
+                          {selectedCalendarId === cal.id && (
+                            <Check size={14} className="ml-auto text-accent shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </section>
 

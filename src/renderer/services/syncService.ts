@@ -1,5 +1,6 @@
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
+import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import type { Task, Distraction } from '../stores/taskStore'
 
 interface TaskData {
@@ -19,17 +20,31 @@ interface DistractionData {
   processedAt?: number
 }
 
+interface TimeBlockData {
+  id: string
+  startTime: number
+  endTime: number
+  title: string
+  color: string
+  createdAt: number
+  updatedAt: number
+  googleEventId?: string
+  isGoogleReadOnly?: boolean
+}
+
 interface DayFileData {
   date: string
   pomodoros: number
   updatedAt: number
   tasks: TaskData[]
   distractions: DistractionData[]
+  timeBlocks?: TimeBlockData[]
 }
 
 const SYNC_MIGRATED_KEY = 'bloc-icloud-migrated'
 let unsubscribeTasks: (() => void) | null = null
 let unsubscribePomodoro: (() => void) | null = null
+let unsubscribeTimeBlocks: (() => void) | null = null
 let cleanupFileChanged: (() => void) | null = null
 let debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
 let icloudAvailable = false
@@ -80,19 +95,50 @@ function dataToDistraction(data: DistractionData, date: string): Distraction {
   }
 }
 
+function timeBlockToData(b: TimeBlock): TimeBlockData {
+  return {
+    id: b.id,
+    startTime: b.startTime,
+    endTime: b.endTime,
+    title: b.title,
+    color: b.color,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+    googleEventId: b.googleEventId,
+    isGoogleReadOnly: b.isGoogleReadOnly
+  }
+}
+
+function dataToTimeBlock(data: TimeBlockData, date: string): TimeBlock {
+  return {
+    id: data.id,
+    date,
+    startTime: data.startTime,
+    endTime: data.endTime,
+    title: data.title,
+    color: data.color as TimeBlock['color'],
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+    googleEventId: data.googleEventId,
+    isGoogleReadOnly: data.isGoogleReadOnly
+  }
+}
+
 // --- Core sync functions ---
 
 function buildDayFileData(date: string): DayFileData {
   const tasks = useTaskStore.getState().tasks[date] || []
   const distractions = useTaskStore.getState().distractions[date] || []
   const pomodoros = usePomodoroStore.getState().completedPomodoros[date] || 0
+  const timeBlocks = useTimeBlockStore.getState().blocks[date] || []
 
   return {
     date,
     pomodoros,
     updatedAt: Date.now(),
     tasks: tasks.map(taskToData),
-    distractions: distractions.map(distractionToData)
+    distractions: distractions.map(distractionToData),
+    timeBlocks: timeBlocks.map(timeBlockToData)
   }
 }
 
@@ -143,6 +189,15 @@ function applyExternalChange(data: DayFileData): void {
       }
     })
   }
+
+  // Apply time blocks
+  if (data.timeBlocks && data.timeBlocks.length > 0) {
+    const newTimeBlocks = data.timeBlocks.map((b) => dataToTimeBlock(b, data.date))
+    const timeBlockState = useTimeBlockStore.getState()
+    useTimeBlockStore.setState({
+      blocks: { ...timeBlockState.blocks, [data.date]: newTimeBlocks }
+    })
+  }
 }
 
 // --- Migration ---
@@ -157,6 +212,7 @@ async function migrateLocalStorageToICloud(): Promise<void> {
   for (const date of Object.keys(pomodoroState.completedPomodoros)) allDates.add(date)
 
   for (const date of allDates) {
+    if (date.includes('__block__')) continue // per-block task keys are local-only
     writeDayToICloud(date)
   }
 
@@ -170,6 +226,7 @@ async function loadAllFromICloud(): Promise<void> {
   const newTasks: Record<string, Task[]> = {}
   const newDistractions: Record<string, Distraction[]> = {}
   const newPomodoros: Record<string, number> = {}
+  const newTimeBlocks: Record<string, TimeBlock[]> = {}
 
   for (const day of allDays) {
     if (day.tasks.length > 0) {
@@ -181,11 +238,15 @@ async function loadAllFromICloud(): Promise<void> {
     if (day.pomodoros > 0) {
       newPomodoros[day.date] = day.pomodoros
     }
+    if (day.timeBlocks && day.timeBlocks.length > 0) {
+      newTimeBlocks[day.date] = day.timeBlocks.map((b) => dataToTimeBlock(b, day.date))
+    }
   }
 
   // Merge with existing local data — iCloud takes precedence
   const taskState = useTaskStore.getState()
   const pomodoroState = usePomodoroStore.getState()
+  const timeBlockState = useTimeBlockStore.getState()
 
   useTaskStore.setState({
     tasks: { ...taskState.tasks, ...newTasks },
@@ -194,6 +255,10 @@ async function loadAllFromICloud(): Promise<void> {
 
   usePomodoroStore.setState({
     completedPomodoros: { ...pomodoroState.completedPomodoros, ...newPomodoros }
+  })
+
+  useTimeBlockStore.setState({
+    blocks: { ...timeBlockState.blocks, ...newTimeBlocks }
   })
 }
 
@@ -225,6 +290,7 @@ function subscribeToStoreChanges(): void {
 
     const allChanged = new Set([...changedTaskDates, ...changedDistractionDates])
     for (const date of allChanged) {
+      if (date.includes('__block__')) continue // per-block task keys are local-only
       debouncedWrite(date)
     }
   })
@@ -237,6 +303,20 @@ function subscribeToStoreChanges(): void {
       state.completedPomodoros as unknown as Record<string, unknown[]>
     )
     prevPomodoros = state.completedPomodoros
+
+    for (const date of changed) {
+      debouncedWrite(date)
+    }
+  })
+
+  let prevBlocks = useTimeBlockStore.getState().blocks
+
+  unsubscribeTimeBlocks = useTimeBlockStore.subscribe((state) => {
+    const changed = getChangedDates(
+      prevBlocks as unknown as Record<string, unknown[]>,
+      state.blocks as unknown as Record<string, unknown[]>
+    )
+    prevBlocks = state.blocks
 
     for (const date of changed) {
       debouncedWrite(date)
@@ -296,9 +376,11 @@ export async function watchDate(date: string): Promise<void> {
 export function cleanup(): void {
   unsubscribeTasks?.()
   unsubscribePomodoro?.()
+  unsubscribeTimeBlocks?.()
   cleanupFileChanged?.()
   unsubscribeTasks = null
   unsubscribePomodoro = null
+  unsubscribeTimeBlocks = null
   cleanupFileChanged = null
   for (const timer of debounceTimers.values()) {
     clearTimeout(timer)
