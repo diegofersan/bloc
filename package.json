@@ -45,7 +45,8 @@
     },
     "linux": {
       "icon": "build/icon.png",
-      "target": "AppImage"
+      "target": "AppImage",
+      "category": "Utility"
     },
     "nsis": {
       "oneClick": true,
