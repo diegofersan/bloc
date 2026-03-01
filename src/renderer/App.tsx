@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
+import { Play } from 'lucide-react'
 import CalendarView from './views/CalendarView'
 import DayView from './views/DayView'
 import InboxView from './views/InboxView'
