@@ -7,6 +7,7 @@ import TimelineView from './views/TimelineView'
 import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
+import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
 import { useTaskStore } from './stores/taskStore'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
@@ -152,6 +153,7 @@ interface ToastState {
 
 export default function App() {
   const [showCapture, setShowCapture] = useState(false)
+  const [showStandup, setShowStandup] = useState(false)
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false })
   const lastDeleted = useTaskStore((s) => s.lastDeleted)
   const undoDelete = useTaskStore((s) => s.undoDelete)
@@ -266,6 +268,10 @@ export default function App() {
         e.preventDefault()
         toggleCapture()
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        setShowStandup((v) => !v)
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
@@ -326,6 +332,10 @@ export default function App() {
           visible={showCapture}
           onClose={() => setShowCapture(false)}
           onCaptured={showCapturedToast}
+        />
+        <DailyStandupModal
+          visible={showStandup}
+          onClose={() => setShowStandup(false)}
         />
         <Toast
           message={toast.message}

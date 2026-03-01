@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -10,6 +10,7 @@ import TimelineGrid from '../components/TimelineGrid'
 import DistractionItem from '../components/DistractionItem'
 import DayView from './DayView'
 import PomodoroTimer from '../components/PomodoroTimer'
+import DailyStandupModal from '../components/DailyStandupModal'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 import { syncDate } from '../services/googleCalendarSync'
 
@@ -156,6 +157,7 @@ export default function TimelineView() {
   const [isDividerDragging, setIsDividerDragging] = useState(false)
 
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640)
+  const [showStandup, setShowStandup] = useState(false)
   const [activeTab, setActiveTab] = useState<'timeline' | 'distractions'>('timeline')
   useEffect(() => {
     const onResize = () => setIsNarrow(window.innerWidth < 640)
@@ -501,7 +503,16 @@ export default function TimelineView() {
               <ArrowLeft size={18} />
             </motion.button>
           </div>
-          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowStandup(true)}
+              aria-label="Daily Standup"
+              className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
+            >
+              <ClipboardList size={18} />
+            </motion.button>
             <PomodoroTimer />
           </div>
         </div>
@@ -576,6 +587,7 @@ export default function TimelineView() {
             </div>
           )}
         </div>
+        <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
       </div>
     )
   }
@@ -596,7 +608,16 @@ export default function TimelineView() {
             <ArrowLeft size={18} />
           </motion.button>
         </div>
-        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setShowStandup(true)}
+            aria-label="Daily Standup"
+            className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
+          >
+            <ClipboardList size={18} />
+          </motion.button>
           <PomodoroTimer />
         </div>
       </div>
@@ -684,6 +705,7 @@ export default function TimelineView() {
           </div>
         </div>
       </div>
+      <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
     </div>
   )
 }
