@@ -2,6 +2,7 @@ import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, 
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { is } from '@electron-toolkit/utils'
+import { autoUpdater } from 'electron-updater'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -128,6 +129,23 @@ if (!gotTheLock) {
       mainWindow?.webContents.send('navigate', '/inbox')
       mainWindow?.show()
       mainWindow?.focus()
+    })
+
+    // Auto-update (production only)
+    if (!is.dev) {
+      autoUpdater.autoDownload = true
+      autoUpdater.autoInstallOnAppQuit = true
+      autoUpdater.on('update-available', (info) => {
+        mainWindow?.webContents.send('update-available', info.version)
+      })
+      autoUpdater.on('update-downloaded', (info) => {
+        mainWindow?.webContents.send('update-downloaded', info.version)
+      })
+      autoUpdater.checkForUpdatesAndNotify()
+    }
+
+    ipcMain.on('install-update', () => {
+      autoUpdater.quitAndInstall()
     })
 
     app.on('activate', () => {

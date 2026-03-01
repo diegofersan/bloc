@@ -15,6 +15,9 @@ declare global {
       onNavigate: (callback: (path: string) => void) => () => void
       onQuickCapture: (callback: () => void) => () => void
       updatePomodoroTray: (time: string | null, status: string | null) => void
+      onUpdateAvailable: (callback: (version: string) => void) => () => void
+      onUpdateDownloaded: (callback: (version: string) => void) => () => void
+      installUpdate: () => void
     }
   }
 }
@@ -71,6 +74,27 @@ export default function App() {
   const clearDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const toggleCapture = useCallback(() => setShowCapture((v) => !v), [])
+
+  // Auto-update listeners
+  useEffect(() => {
+    const cleanupAvailable = window.bloc?.onUpdateAvailable((version) => {
+      setToast({ message: `A transferir atualização v${version}...`, visible: true })
+    })
+    const cleanupDownloaded = window.bloc?.onUpdateDownloaded((version) => {
+      setToast({
+        message: `Atualização v${version} pronta`,
+        visible: true,
+        action: {
+          label: 'Reiniciar',
+          onClick: () => window.bloc?.installUpdate()
+        }
+      })
+    })
+    return () => {
+      cleanupAvailable?.()
+      cleanupDownloaded?.()
+    }
+  }, [])
 
   // Cleanup old distractions on mount
   useEffect(() => {

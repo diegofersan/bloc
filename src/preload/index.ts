@@ -21,6 +21,19 @@ if (process.contextIsolated) {
       },
       updatePomodoroTray: (time: string | null, status: string | null) => {
         ipcRenderer.send('pomodoro-tray-update', { time, status })
+      },
+      onUpdateAvailable: (callback: (version: string) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, version: string) => callback(version)
+        ipcRenderer.on('update-available', handler)
+        return () => { ipcRenderer.removeListener('update-available', handler) }
+      },
+      onUpdateDownloaded: (callback: (version: string) => void) => {
+        const handler = (_event: Electron.IpcRendererEvent, version: string) => callback(version)
+        ipcRenderer.on('update-downloaded', handler)
+        return () => { ipcRenderer.removeListener('update-downloaded', handler) }
+      },
+      installUpdate: () => {
+        ipcRenderer.send('install-update')
       }
     })
   } catch (error) {

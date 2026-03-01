@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.3",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
@@ -27,15 +28,28 @@
     "directories": {
       "buildResources": "build"
     },
+    "publish": {
+      "provider": "github",
+      "owner": "diegofersan",
+      "repo": "bloc"
+    },
     "mac": {
       "icon": "build/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"],
+      "identity": null
     },
     "win": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "target": "nsis"
     },
     "linux": {
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "target": "AppImage"
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
     }
   },
   "devDependencies": {
