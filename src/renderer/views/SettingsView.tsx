@@ -11,12 +11,20 @@ const providers: { id: AIProvider; name: string; description: string }[] = [
   { id: 'gemini', name: 'Gemini', description: 'Gemini Flash & mais' }
 ]
 
+const shortcuts = [
+  { keys: '⌘ ,', action: 'Definições' },
+  { keys: '⌘ I', action: 'Caixa de entrada' },
+  { keys: '⌘ ⇧ D', action: 'Captura rápida' },
+  { keys: '⌘ Z', action: 'Desfazer eliminação' }
+]
+
 export default function SettingsView() {
   const navigate = useNavigate()
   const { provider, apiKey, model, setProvider, setApiKey, setModel } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
   const [showKey, setShowKey] = useState(false)
+  const appVersion = window.bloc?.getAppVersion() ?? ''
 
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640)
   useEffect(() => {
@@ -48,6 +56,9 @@ export default function SettingsView() {
             Definições
           </h2>
           <p className="text-xs text-text-muted mb-8">As definições são guardadas automaticamente</p>
+
+          {/* AI Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Inteligência Artificial</h3>
 
           {/* AI Provider */}
           <section className="mb-8">
@@ -109,7 +120,7 @@ export default function SettingsView() {
           </section>
 
           {/* Model */}
-          <section className="mb-10">
+          <section className="mb-0">
             <label className="block text-sm font-medium text-text-secondary mb-2">Modelo</label>
             <input
               type="text"
@@ -119,11 +130,12 @@ export default function SettingsView() {
             />
           </section>
 
-          {/* Pomodoro */}
-          <section className="mb-10">
-            <label className="block text-sm font-medium text-text-secondary mb-3">
-              Pomodoro
-            </label>
+          <hr className="border-border my-8" />
+
+          {/* Pomodoro Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Pomodoro</h3>
+
+          <section className="mb-0">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-text-muted mb-1">Foco (min)</label>
@@ -149,6 +161,27 @@ export default function SettingsView() {
               </div>
             </div>
           </section>
+
+          <hr className="border-border my-8" />
+
+          {/* Keyboard Shortcuts Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Atalhos de teclado</h3>
+
+          <div className="grid grid-cols-2 gap-y-2 gap-x-4">
+            {shortcuts.map((s) => (
+              <div key={s.keys} className="contents">
+                <span className="text-xs text-text-muted">
+                  <kbd className="bg-bg-secondary rounded px-1.5 py-0.5 font-mono">{s.keys}</kbd>
+                </span>
+                <span className="text-xs text-text-muted">{s.action}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <p className="text-xs text-text-muted mt-8 pb-4">
+            {appVersion ? `Bloc v${appVersion}` : 'Bloc'}
+          </p>
         </div>
       </div>
     </div>

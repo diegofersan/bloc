@@ -5,6 +5,7 @@ if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
     contextBridge.exposeInMainWorld('bloc', {
+      getAppVersion: (): string => ipcRenderer.sendSync('get-app-version'),
       onNavigate: (callback: (path: string) => void) => {
         const handler = (_event: Electron.IpcRendererEvent, path: string) => callback(path)
         ipcRenderer.on('navigate', handler)

@@ -12,6 +12,7 @@ import { useTaskStore } from './stores/taskStore'
 declare global {
   interface Window {
     bloc?: {
+      getAppVersion: () => string
       onNavigate: (callback: (path: string) => void) => () => void
       onQuickCapture: (callback: () => void) => () => void
       updatePomodoroTray: (time: string | null, status: string | null) => void

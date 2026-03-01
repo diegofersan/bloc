@@ -164,6 +164,10 @@ rm -rf "$TEMP_DIR"
     tray = new Tray(createTrayIcon())
     tray.setTitle('')
 
+    ipcMain.on('get-app-version', (event) => {
+      event.returnValue = app.getVersion()
+    })
+
     ipcMain.on('pomodoro-tray-update', (_event, data: { time: string | null; status: string | null }) => {
       if (!tray) return
       tray.setTitle(data.time ?? '')
