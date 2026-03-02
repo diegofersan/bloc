@@ -53,7 +53,8 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
 
   const colors = COLOR_MAP[block.color]
   const top = timeToY(block.startTime)
-  const height = Math.max(((block.endTime - block.startTime) / 60) * HOUR_HEIGHT, SNAP_MINUTES / 60 * HOUR_HEIGHT)
+  const MIN_VISIBLE_HEIGHT = 24 // enough for title text
+  const height = Math.max(((block.endTime - block.startTime) / 60) * HOUR_HEIGHT, MIN_VISIBLE_HEIGHT)
   const duration = block.endTime - block.startTime
 
   // Drag to move — initiated from anywhere on the block (except buttons and resize handle)
@@ -131,7 +132,7 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
       layout={!isDragging && !isResizing}
       data-timeblock
       onMouseDown={handleDragStart}
-      style={{ top, height, left: 4, right: 4, position: 'absolute', overflow: 'visible' }}
+      style={{ top, height, minHeight: 22, left: 4, right: 4, position: 'absolute', overflow: 'visible' }}
       className={`group rounded-lg border pointer-events-auto ${colors.bg} ${colors.border} ${
         isDragging || isResizing ? 'z-30 shadow-lg' : 'z-10'
       } ${showColorPicker ? 'z-40' : ''} cursor-grab active:cursor-grabbing`}
@@ -142,9 +143,9 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
         <GripVertical size={10} className="text-text-muted/40 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
-      <div className="px-2 pt-1.5 pb-1 h-full flex flex-col overflow-clip">
+      <div className="px-2 pt-1 pb-1 h-full flex flex-col overflow-hidden">
         <div
-          className={`text-xs font-medium ${colors.text} truncate cursor-pointer hover:underline`}
+          className={`text-xs font-medium leading-tight ${colors.text} truncate cursor-pointer hover:underline shrink-0`}
           onClick={handleTitleClick}
         >
           {block.title || 'Sem título'}
