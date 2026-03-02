@@ -11,6 +11,7 @@ import DistractionItem from '../components/DistractionItem'
 import DayView from './DayView'
 import PomodoroTimer from '../components/PomodoroTimer'
 import DailyStandupModal from '../components/DailyStandupModal'
+import HourglassIndicator from '../components/HourglassIndicator'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 import { syncDate } from '../services/googleCalendarSync'
 
@@ -93,31 +94,34 @@ function DetailBlockHeader({
         className="flex-1 min-w-0 text-sm font-medium bg-transparent outline-none text-text-primary placeholder:text-text-muted/50 border-b border-transparent transition-colors"
       />
 
-      {/* Editable time range */}
-      <div className="flex items-center gap-1 shrink-0">
-        <input
-          type="text"
-          value={startStr}
-          onChange={(e) => setStartStr(e.target.value)}
-          onBlur={commitStart}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          }}
-          className="w-[52px] text-xs text-text-secondary font-medium tabular-nums text-center bg-transparent outline-none border-b border-transparent transition-colors rounded-none"
-          maxLength={5}
-        />
-        <span className="text-xs text-text-muted">–</span>
-        <input
-          type="text"
-          value={endStr}
-          onChange={(e) => setEndStr(e.target.value)}
-          onBlur={commitEnd}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          }}
-          className="w-[52px] text-xs text-text-secondary font-medium tabular-nums text-center bg-transparent outline-none border-b border-transparent transition-colors rounded-none"
-          maxLength={5}
-        />
+      {/* Hourglass + editable time range */}
+      <div className="flex items-center gap-2 shrink-0">
+        <HourglassIndicator startTime={block.startTime} endTime={block.endTime} color={block.color} />
+        <div className="flex items-center gap-1">
+          <input
+            type="text"
+            value={startStr}
+            onChange={(e) => setStartStr(e.target.value)}
+            onBlur={commitStart}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            className="w-[52px] text-xs text-text-secondary font-medium tabular-nums text-center bg-transparent outline-none border-b border-transparent transition-colors rounded-none"
+            maxLength={5}
+          />
+          <span className="text-xs text-text-muted">–</span>
+          <input
+            type="text"
+            value={endStr}
+            onChange={(e) => setEndStr(e.target.value)}
+            onBlur={commitEnd}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+            }}
+            className="w-[52px] text-xs text-text-secondary font-medium tabular-nums text-center bg-transparent outline-none border-b border-transparent transition-colors rounded-none"
+            maxLength={5}
+          />
+        </div>
       </div>
     </div>
   )
