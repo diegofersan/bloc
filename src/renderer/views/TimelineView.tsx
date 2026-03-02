@@ -96,7 +96,7 @@ function DetailBlockHeader({
 
       {/* Hourglass + editable time range */}
       <div className="flex items-center gap-2 shrink-0">
-        <HourglassIndicator startTime={block.startTime} endTime={block.endTime} color={block.color} />
+        <HourglassIndicator startTime={block.startTime} endTime={block.endTime} />
         <div className="flex items-center gap-1">
           <input
             type="text"

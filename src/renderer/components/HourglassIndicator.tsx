@@ -1,23 +1,9 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { TimeBlockColor } from '../stores/timeBlockStore'
-import { formatTime } from './TimeBlockItem'
-
-const FILL_COLORS: Record<TimeBlockColor, string> = {
-  indigo: '#6366f1',
-  emerald: '#10b981',
-  amber: '#f59e0b',
-  rose: '#f43f5e',
-  sky: '#0ea5e9',
-  violet: '#8b5cf6',
-  slate: '#64748b'
-}
 
 interface HourglassIndicatorProps {
   startTime: number
   endTime: number
-  color: TimeBlockColor
-  showTimes?: boolean
 }
 
 function formatDuration(minutes: number): string {
@@ -33,13 +19,18 @@ function getNowMinutes(): number {
   return now.getHours() * 60 + now.getMinutes()
 }
 
-export default function HourglassIndicator({ startTime, endTime, color, showTimes = false }: HourglassIndicatorProps) {
+export default function HourglassIndicator({ startTime, endTime }: HourglassIndicatorProps) {
   const [nowMinutes, setNowMinutes] = useState(getNowMinutes)
-  const [hovered, setHovered] = useState(false)
+  const [showRemaining, setShowRemaining] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => {
     const id = setInterval(() => setNowMinutes(getNowMinutes()), 60_000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [])
 
   const progress = useMemo(() => {
@@ -49,64 +40,44 @@ export default function HourglassIndicator({ startTime, endTime, color, showTime
     return Math.max(0, Math.min(1, elapsed / total))
   }, [startTime, endTime, nowMinutes])
 
-  const elapsed = useMemo(
-    () => Math.max(0, Math.min(endTime - startTime, nowMinutes - startTime)),
-    [startTime, endTime, nowMinutes]
-  )
-
   const remaining = useMemo(
     () => Math.max(0, endTime - nowMinutes),
     [endTime, nowMinutes]
   )
 
-  const fillColor = FILL_COLORS[color]
-
-  const handleMouseEnter = useCallback(() => setHovered(true), [])
-  const handleMouseLeave = useCallback(() => setHovered(false), [])
+  const handleClick = useCallback(() => {
+    setShowRemaining(true)
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setShowRemaining(false), 5000)
+  }, [])
 
   return (
     <div className="relative flex items-center gap-1.5">
-      {/* Square indicator */}
       <div
-        className="relative w-8 h-8 rounded border border-slate-300 overflow-hidden"
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
+        className="relative w-4 h-4 rounded-sm border border-current opacity-30 overflow-hidden cursor-pointer"
+        onClick={handleClick}
       >
-        {/* Fill from bottom */}
         <motion.div
-          className="absolute bottom-0 left-0 right-0"
-          style={{ backgroundColor: fillColor, opacity: 0.35 }}
+          className="absolute bottom-0 left-0 right-0 bg-current"
           initial={false}
           animate={{ height: `${progress * 100}%` }}
           transition={{ duration: 0.6, ease: 'easeInOut' }}
         />
-
-        {/* Tooltip */}
-        <AnimatePresence>
-          {hovered && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.15 }}
-              className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded bg-slate-800 text-white text-[10px] leading-tight whitespace-nowrap pointer-events-none"
-            >
-              <div>{formatDuration(elapsed)} decorrido</div>
-              <div>{formatDuration(remaining)} restante</div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
-      {/* Start / end times (optional) */}
-      {showTimes && (
-        <div className="flex flex-col text-[10px] text-slate-400 leading-tight">
-          <span>{formatTime(startTime)}</span>
-          <span>{formatTime(endTime)}</span>
-        </div>
-      )}
+      <AnimatePresence>
+        {showRemaining && (
+          <motion.span
+            initial={{ opacity: 0, x: -4 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -4 }}
+            transition={{ duration: 0.15 }}
+            className="text-[10px] text-text-muted whitespace-nowrap"
+          >
+            {formatDuration(remaining)} restante
+          </motion.span>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
-
-export { FILL_COLORS }
