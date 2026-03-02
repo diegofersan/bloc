@@ -9,6 +9,7 @@ import SettingsView from './views/SettingsView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
+import IdeaButton from './components/IdeaButton'
 import { useTaskStore } from './stores/taskStore'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
 import { usePomodoroStore, type PomodoroStatus } from './stores/pomodoroStore'
@@ -343,6 +344,9 @@ export default function App() {
           duration={toast.duration}
           onClose={() => setToast((t) => ({ ...t, visible: false }))}
           action={toast.action}
+        />
+        <IdeaButton
+          onToast={(msg, action) => setToast({ message: msg, visible: true, action })}
         />
       </div>
     </HashRouter>

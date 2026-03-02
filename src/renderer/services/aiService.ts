@@ -138,6 +138,73 @@ export function parseSubtasks(raw: string): string[] {
   return subtasks.slice(0, MAX_SUBTASKS)
 }
 
+const IDEA_TO_ISSUE_PROMPT = `You are a product manager. Transform the user's idea into a structured GitHub issue.
+Respond ONLY in JSON: {"title": "concise title", "body": "markdown body"}
+- Title: max 80 chars, imperative mood
+- Body must follow this exact structure with markdown headers:
+
+## Descrição
+One paragraph explaining what the feature does and why it matters.
+
+## Requisitos
+- Bullet list of concrete functional requirements
+
+## Benefícios Esperados
+- Bullet list of user/product benefits
+
+## Critérios de Aceitação
+- Bullet list of verifiable conditions that confirm the feature is done
+
+- ALWAYS respond in the SAME LANGUAGE as the user's idea
+- Return ONLY valid JSON, no markdown fences or extra text`
+
+export function parseIssueJson(raw: string): { title: string; body: string } {
+  let cleaned = raw.replace(/```(?:json)?\s*/g, '').replace(/```/g, '').trim()
+
+  const objMatch = cleaned.match(/\{[\s\S]*\}/)
+  if (objMatch) {
+    cleaned = objMatch[0]
+  }
+
+  const parsed = JSON.parse(cleaned)
+
+  if (typeof parsed.title !== 'string' || typeof parsed.body !== 'string') {
+    throw new Error('Unexpected response format: missing title or body')
+  }
+
+  return { title: parsed.title, body: parsed.body }
+}
+
+export async function ideaToIssue(
+  idea: string,
+  provider: AIProvider,
+  apiKey: string,
+  model: string
+): Promise<{ title: string; body: string }> {
+  const systemMsg = IDEA_TO_ISSUE_PROMPT
+  const userMsg = idea
+
+  try {
+    let raw: string
+    switch (provider) {
+      case 'openai':
+        raw = await callOpenAI(systemMsg, userMsg, apiKey, model)
+        break
+      case 'anthropic':
+        raw = await callAnthropic(systemMsg, userMsg, apiKey, model)
+        break
+      case 'gemini':
+        raw = await callGemini(systemMsg, userMsg, apiKey, model)
+        break
+    }
+
+    return parseIssueJson(raw)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    throw new Error(`Failed to process idea: ${message}`)
+  }
+}
+
 export async function expandTask(
   taskText: string,
   provider: AIProvider,

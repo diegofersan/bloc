@@ -34,7 +34,7 @@ const shortcuts = [
 
 export default function SettingsView() {
   const navigate = useNavigate()
-  const { provider, apiKey, model, setProvider, setApiKey, setModel, primaryTimezone, secondaryTimezone, setPrimaryTimezone, setSecondaryTimezone } = useSettingsStore()
+  const { provider, apiKey, model, setProvider, setApiKey, setModel, primaryTimezone, secondaryTimezone, setPrimaryTimezone, setSecondaryTimezone, githubToken, setGithubToken } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
@@ -49,6 +49,7 @@ export default function SettingsView() {
   } = useGoogleCalendarStore()
   const [newSite, setNewSite] = useState('')
   const [showKey, setShowKey] = useState(false)
+  const [showGithubToken, setShowGithubToken] = useState(false)
   const [gcalLoading, setGcalLoading] = useState(false)
   const appVersion = window.bloc?.getAppVersion() ?? ''
 
@@ -213,6 +214,32 @@ export default function SettingsView() {
               onChange={(e) => setModel(e.target.value)}
               className="w-full rounded-lg bg-bg-secondary border border-border px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-colors"
             />
+          </section>
+
+          <hr className="border-border my-8" />
+
+          {/* GitHub Section */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">GitHub</h3>
+
+          <section className="mb-0">
+            <label className="block text-sm font-medium text-text-secondary mb-2">Token de acesso pessoal</label>
+            <p className="text-xs text-text-muted mb-2">Necessário para criar issues a partir de ideias</p>
+            <div className="relative">
+              <input
+                type={showGithubToken ? 'text' : 'password'}
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder="github_pat_..."
+                className="w-full rounded-lg bg-bg-secondary border border-border px-4 py-3 pr-12 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors"
+              />
+              <button
+                onClick={() => setShowGithubToken(!showGithubToken)}
+                aria-label={showGithubToken ? 'Ocultar token' : 'Mostrar token'}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+              >
+                {showGithubToken ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </section>
 
           <hr className="border-border my-8" />

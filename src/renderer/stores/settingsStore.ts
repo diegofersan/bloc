@@ -15,11 +15,13 @@ interface SettingsState {
   model: string
   primaryTimezone: string
   secondaryTimezone: string | null
+  githubToken: string
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
   setPrimaryTimezone: (tz: string) => void
   setSecondaryTimezone: (tz: string | null) => void
+  setGithubToken: (token: string) => void
   isConfigured: () => boolean
 }
 
@@ -31,6 +33,7 @@ export const useSettingsStore = create<SettingsState>()(
       model: DEFAULT_MODELS['openai'],
       primaryTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       secondaryTimezone: null,
+      githubToken: '',
 
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
@@ -50,6 +53,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setSecondaryTimezone: (tz) => {
         set({ secondaryTimezone: tz })
+      },
+
+      setGithubToken: (token) => {
+        set({ githubToken: token })
       },
 
       isConfigured: () => {
