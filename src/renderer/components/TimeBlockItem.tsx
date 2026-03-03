@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Palette, Trash2, GripVertical } from 'lucide-react'
+import { Palette, Trash2, GripVertical, CheckCircle2 } from 'lucide-react'
 import type { TimeBlock, TimeBlockColor } from '../stores/timeBlockStore'
+import { useTaskStore, type Task } from '../stores/taskStore'
 import ColorPicker from './ColorPicker'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -43,6 +44,20 @@ interface TimeBlockItemProps {
   gridTop: number
 }
 
+function countTasks(tasks: Task[]): { total: number; completed: number } {
+  let total = 0, completed = 0
+  for (const t of tasks) {
+    total++
+    if (t.completed) completed++
+    if (t.subtasks.length > 0) {
+      const sub = countTasks(t.subtasks)
+      total += sub.total
+      completed += sub.completed
+    }
+  }
+  return { total, completed }
+}
+
 export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, gridTop }: TimeBlockItemProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<{ top: number; left: number } | null>(null)
@@ -52,6 +67,10 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
   const dragRef = useRef<{ startY: number; startTime: number }>({ startY: 0, startTime: 0 })
   const resizeRef = useRef<{ startY: number; startEnd: number }>({ startY: 0, startEnd: 0 })
   const didDrag = useRef(false)
+
+  const blockKey = `${block.date}__block__${block.id}`
+  const blockTasks = useTaskStore(useCallback((s) => s.tasks[blockKey], [blockKey]))
+  const taskCounts = useMemo(() => countTasks(blockTasks ?? []), [blockTasks])
 
   const colors = COLOR_MAP[block.color]
   const top = timeToY(block.startTime)
@@ -155,6 +174,16 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
         {duration >= 30 && (
           <div className="text-[10px] text-text-muted mt-0.5">
             {formatTime(block.startTime)} – {formatTime(block.endTime)}
+          </div>
+        )}
+
+        {/* Task counter */}
+        {taskCounts.total > 0 && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <CheckCircle2 size={9} className={taskCounts.completed === taskCounts.total ? 'text-emerald-600' : 'text-text-muted/60'} />
+            <span className={`text-[9px] tabular-nums ${taskCounts.completed === taskCounts.total ? 'text-emerald-600 font-medium' : 'text-text-muted/60'}`}>
+              {taskCounts.completed}/{taskCounts.total}
+            </span>
           </div>
         )}
 
