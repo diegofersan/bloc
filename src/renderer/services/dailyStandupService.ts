@@ -20,10 +20,20 @@ export interface BlockSummary {
   durationMinutes: number
 }
 
+export interface BlockWithTasks {
+  blockId: string
+  title: string
+  startTime: number
+  endTime: number
+  durationMinutes: number
+  tasks: TaskSummary[]
+}
+
 export interface DaySnapshot {
   date: string
   tasks: { total: number; completed: number; items: TaskSummary[] }
   timeBlocks: { count: number; totalMinutes: number; items: BlockSummary[] }
+  blocks: BlockWithTasks[]
   pomodoros: number
 }
 
@@ -91,10 +101,28 @@ export function gatherDayData(date: string): DaySnapshot {
 
   const totalMinutes = blockItems.reduce((acc, b) => acc + b.durationMinutes, 0)
 
+  // Gather tasks inside each block via composite key "date__block__blockId"
+  const taskStore = useTaskStore.getState()
+  const blocksWithTasks: BlockWithTasks[] = blocks.map((b) => {
+    const blockTasks = taskStore.getTasksForDate(`${date}__block__${b.id}`)
+    return {
+      blockId: b.id,
+      title: b.title || 'Sem título',
+      startTime: b.startTime,
+      endTime: b.endTime,
+      durationMinutes: b.endTime - b.startTime,
+      tasks: blockTasks.map((t) => {
+        const sub = countSubtasks(t.subtasks)
+        return { text: t.text, completed: t.completed, subtasksDone: sub.done, subtasksTotal: sub.total }
+      })
+    }
+  })
+
   return {
     date,
     tasks: { total: taskItems.length, completed: taskItems.filter((t) => t.completed).length, items: taskItems },
     timeBlocks: { count: blockItems.length, totalMinutes, items: blockItems },
+    blocks: blocksWithTasks,
     pomodoros
   }
 }
@@ -113,41 +141,74 @@ function formatTaskBullets(items: TaskSummary[], onlyCompleted: boolean): string
     .join('\n')
 }
 
-function formatBlockBullets(items: BlockSummary[]): string {
-  if (items.length === 0) return ''
-  return items
-    .map((b) => `  • ${formatTime(b.startTime)}–${formatTime(b.endTime)} ${b.title} (${formatMinutes(b.durationMinutes)})`)
-    .join('\n')
+function formatBlockWithTasksBullets(
+  blocks: BlockWithTasks[],
+  filterCompleted: boolean
+): string {
+  const lines: string[] = []
+
+  for (const block of blocks) {
+    const timeRange = `${formatTime(block.startTime)}–${formatTime(block.endTime)}`
+
+    if (block.tasks.length === 0) {
+      // Block without tasks — show as a simple bullet
+      lines.push(`  • ${timeRange} ${block.title}`)
+      continue
+    }
+
+    const filtered = block.tasks.filter((t) => (filterCompleted ? t.completed : !t.completed))
+    if (filtered.length === 0) continue
+
+    // Block header with tasks indented below
+    lines.push(`  ${block.title} (${timeRange}):`)
+    for (const t of filtered) {
+      const check = t.completed ? '[x]' : '[ ]'
+      const sub = t.subtasksTotal > 0 ? ` (${t.subtasksDone}/${t.subtasksTotal} subtarefas)` : ''
+      lines.push(`    ${check} ${t.text}${sub}`)
+    }
+  }
+
+  return lines.join('\n')
 }
 
 export function formatTemplateStandup(yesterday: DaySnapshot, today: DaySnapshot): StandupResult {
   // ── Yesterday ──
   let yesterdayText: string
-  const yHasData = yesterday.tasks.total > 0 || yesterday.timeBlocks.count > 0 || yesterday.pomodoros > 0
+  const yHasData =
+    yesterday.tasks.total > 0 ||
+    yesterday.blocks.length > 0 ||
+    yesterday.pomodoros > 0
 
   if (!yHasData) {
     yesterdayText = 'Dia limpo — sem tarefas registadas.'
   } else {
     const parts: string[] = []
 
-    if (yesterday.tasks.completed > 0) {
-      parts.push(`Tarefas concluídas (${yesterday.tasks.completed}/${yesterday.tasks.total}):`)
-      parts.push(formatTaskBullets(yesterday.tasks.items, true))
-    }
+    // Completed section: day-level completed tasks + block completed tasks
+    const dayCompletedBullets = formatTaskBullets(yesterday.tasks.items, true)
+    const blockCompletedBullets = formatBlockWithTasksBullets(yesterday.blocks, true)
 
-    if (yesterday.timeBlocks.count > 0) {
-      parts.push(`Blocos de tempo (${formatMinutes(yesterday.timeBlocks.totalMinutes)} total):`)
-      parts.push(formatBlockBullets(yesterday.timeBlocks.items))
+    if (dayCompletedBullets || blockCompletedBullets) {
+      parts.push('Feitos:')
+      if (dayCompletedBullets) parts.push(dayCompletedBullets)
+      if (blockCompletedBullets) parts.push(blockCompletedBullets)
     }
 
     if (yesterday.pomodoros > 0) {
       parts.push(`${yesterday.pomodoros} pomodoro${yesterday.pomodoros > 1 ? 's' : ''} concluído${yesterday.pomodoros > 1 ? 's' : ''}`)
     }
 
-    if (yesterday.tasks.total > yesterday.tasks.completed) {
-      const incomplete = yesterday.tasks.items.filter((t) => !t.completed)
-      parts.push(`Tarefas por concluir (${incomplete.length}):`)
-      parts.push(formatTaskBullets(incomplete, false))
+    // Incomplete section: day-level incomplete tasks + block incomplete tasks
+    const dayIncompleteBullets = formatTaskBullets(
+      yesterday.tasks.items.filter((t) => !t.completed),
+      false
+    )
+    const blockIncompleteBullets = formatBlockWithTasksBullets(yesterday.blocks, false)
+
+    if (dayIncompleteBullets || blockIncompleteBullets) {
+      parts.push('Por concluir:')
+      if (dayIncompleteBullets) parts.push(dayIncompleteBullets)
+      if (blockIncompleteBullets) parts.push(blockIncompleteBullets)
     }
 
     yesterdayText = parts.join('\n')
@@ -155,21 +216,23 @@ export function formatTemplateStandup(yesterday: DaySnapshot, today: DaySnapshot
 
   // ── Today ──
   let todayText: string
-  const tHasData = today.tasks.total > 0 || today.timeBlocks.count > 0
+  const tHasData = today.tasks.total > 0 || today.blocks.length > 0
 
   if (!tHasData) {
     todayText = 'Sem tarefas planeadas — dia livre para planear.'
   } else {
     const parts: string[] = []
 
-    if (today.tasks.total > 0) {
-      parts.push(`Tarefas planeadas (${today.tasks.total}):`)
-      parts.push(formatTaskBullets(today.tasks.items, false))
-    }
+    // Day-level tasks
+    const dayTaskBullets = formatTaskBullets(today.tasks.items, false)
 
-    if (today.timeBlocks.count > 0) {
-      parts.push(`Blocos agendados (${formatMinutes(today.timeBlocks.totalMinutes)} total):`)
-      parts.push(formatBlockBullets(today.timeBlocks.items))
+    // Blocks: show all tasks (incomplete) + blocks without tasks as bullets
+    const blockBullets = formatBlockWithTasksBullets(today.blocks, false)
+
+    if (dayTaskBullets || blockBullets) {
+      parts.push('Para Fazer:')
+      if (dayTaskBullets) parts.push(dayTaskBullets)
+      if (blockBullets) parts.push(blockBullets)
     }
 
     todayText = parts.join('\n')
@@ -196,23 +259,39 @@ Regras:
 - Usa bullet points simples, sem emojis
 - Sê factual e conciso — não inventes dados
 - O resumo deve ser profissional mas amigável
+- Cada task dentro de um bloco está relacionada com o título do bloco. Funde o contexto do bloco com a task numa frase natural. Exemplo: bloco "Teste de sync" com task "Preencher formulário" → "Preencher formulário do teste de sync". Bloco "Reunião cliente" com task "Rever agenda" → "Rever agenda da reunião com cliente"
+- Blocos sem tarefas aparecem como actividade simples (ex: "Foco profundo (14:00–16:00)")
+- Tarefas do dia (sem bloco) aparecem normalmente
 - Retorna APENAS um JSON com as keys: "yesterday", "today", "blockers"
 - Cada valor é uma string com bullets formatados
 - Max 1024 tokens`
 
+function formatBlocksForPrompt(blocks: BlockWithTasks[]): string {
+  return blocks
+    .map((b) => {
+      const header = `  - ${formatTime(b.startTime)}-${formatTime(b.endTime)} ${b.title}`
+      if (b.tasks.length === 0) return header
+      const taskLines = b.tasks
+        .map((t) => `      ${t.completed ? '[x]' : '[ ]'} ${t.text}${t.subtasksTotal > 0 ? ` (${t.subtasksDone}/${t.subtasksTotal} sub)` : ''}`)
+        .join('\n')
+      return `${header}\n${taskLines}`
+    })
+    .join('\n')
+}
+
 function buildUserPrompt(yesterday: DaySnapshot, today: DaySnapshot): string {
   return `Dados de ontem (${yesterday.date}):
-- Tarefas: ${yesterday.tasks.completed}/${yesterday.tasks.total} concluídas
+- Tarefas do dia: ${yesterday.tasks.completed}/${yesterday.tasks.total} concluídas
 ${yesterday.tasks.items.map((t) => `  - ${t.completed ? '[x]' : '[ ]'} ${t.text}${t.subtasksTotal > 0 ? ` (${t.subtasksDone}/${t.subtasksTotal} sub)` : ''}`).join('\n')}
 - Blocos de tempo: ${yesterday.timeBlocks.count} (${formatMinutes(yesterday.timeBlocks.totalMinutes)})
-${yesterday.timeBlocks.items.map((b) => `  - ${formatTime(b.startTime)}-${formatTime(b.endTime)} ${b.title}`).join('\n')}
+${formatBlocksForPrompt(yesterday.blocks)}
 - Pomodoros: ${yesterday.pomodoros}
 
 Dados de hoje (${today.date}):
-- Tarefas planeadas: ${today.tasks.total}
+- Tarefas do dia: ${today.tasks.total}
 ${today.tasks.items.map((t) => `  - ${t.completed ? '[x]' : '[ ]'} ${t.text}`).join('\n')}
 - Blocos agendados: ${today.timeBlocks.count} (${formatMinutes(today.timeBlocks.totalMinutes)})
-${today.timeBlocks.items.map((b) => `  - ${formatTime(b.startTime)}-${formatTime(b.endTime)} ${b.title}`).join('\n')}
+${formatBlocksForPrompt(today.blocks)}
 
 Gera o daily standup em JSON.`
 }
