@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Copy, Check, Sparkles, RotateCcw, Loader2 } from 'lucide-react'
 import { format, subDays } from 'date-fns'
@@ -11,6 +11,78 @@ import {
   type DaySnapshot
 } from '../services/dailyStandupService'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useTaskStore, type Task } from '../stores/taskStore'
+import { useTimeBlockStore } from '../stores/timeBlockStore'
+
+// ── Recursive task counting ─────────────────────────────────────────
+
+function countAllTasks(tasks: Task[]): { total: number; completed: number } {
+  let total = 0
+  let completed = 0
+  for (const t of tasks) {
+    total++
+    if (t.completed) completed++
+    if (t.subtasks.length > 0) {
+      const sub = countAllTasks(t.subtasks)
+      total += sub.total
+      completed += sub.completed
+    }
+  }
+  return { total, completed }
+}
+
+function useDayTaskCounts(date: string) {
+  const allTasks = useTaskStore((s) => s.tasks)
+  const allBlocks = useTimeBlockStore((s) => s.blocks)
+
+  return useMemo(() => {
+    // Day-level tasks
+    const dayTasks = allTasks[date] || []
+    const dayCounts = countAllTasks(dayTasks)
+
+    // Block-level tasks
+    const blocks = allBlocks[date] || []
+    let blockTotal = 0
+    let blockCompleted = 0
+    for (const b of blocks) {
+      const blockKey = `${date}__block__${b.id}`
+      const blockTasks = allTasks[blockKey] || []
+      const bc = countAllTasks(blockTasks)
+      blockTotal += bc.total
+      blockCompleted += bc.completed
+    }
+
+    return {
+      total: dayCounts.total + blockTotal,
+      completed: dayCounts.completed + blockCompleted
+    }
+  }, [allTasks, allBlocks, date])
+}
+
+// ── Progress bar component ──────────────────────────────────────────
+
+function TaskProgressBar({ completed, total }: { completed: number; total: number }) {
+  if (total === 0) return null
+  const pct = Math.round((completed / total) * 100)
+
+  return (
+    <div className="flex items-center gap-2 mt-1.5">
+      <div className="flex-1 h-1.5 rounded-full bg-black/5 overflow-hidden">
+        <motion.div
+          className="h-full rounded-full bg-emerald-500"
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
+        />
+      </div>
+      <span className="text-[10px] text-text-muted tabular-nums shrink-0">
+        {completed}/{total} tarefas concluídas
+      </span>
+    </div>
+  )
+}
+
+// ── Main component ──────────────────────────────────────────────────
 
 export default function DailyStandupModal({
   visible,
@@ -28,13 +100,16 @@ export default function DailyStandupModal({
 
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
 
+  const todayStr = format(new Date(), 'yyyy-MM-dd')
+  const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
+
+  const yesterdayCounts = useDayTaskCounts(yesterdayStr)
+  const todayCounts = useDayTaskCounts(todayStr)
+
   // Generate template on open
   useEffect(() => {
     if (!visible) return
     previousFocusRef.current = document.activeElement
-
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
-    const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd')
 
     const yesterday = gatherDayData(yesterdayStr)
     const today = gatherDayData(todayStr)
@@ -144,8 +219,8 @@ export default function DailyStandupModal({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
               {result && (
                 <>
-                  <Section title="Ontem" content={result.yesterday} />
-                  <Section title="Hoje" content={result.today} />
+                  <Section title="Ontem" content={result.yesterday} taskCounts={yesterdayCounts} />
+                  <Section title="Hoje" content={result.today} taskCounts={todayCounts} />
                   <Section title="Bloqueios" content={result.blockers} />
                 </>
               )}
@@ -201,13 +276,24 @@ export default function DailyStandupModal({
   )
 }
 
-function Section({ title, content }: { title: string; content: string }) {
+function Section({
+  title,
+  content,
+  taskCounts
+}: {
+  title: string
+  content: string
+  taskCounts?: { total: number; completed: number }
+}) {
   return (
     <div>
       <h3 className="text-xs font-semibold text-text-secondary mb-1.5">
         {title}
       </h3>
-      <div className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap pl-1">
+      {taskCounts && taskCounts.total > 0 && (
+        <TaskProgressBar completed={taskCounts.completed} total={taskCounts.total} />
+      )}
+      <div className="text-xs text-text-primary leading-relaxed whitespace-pre-wrap pl-1 mt-1.5">
         {content}
       </div>
     </div>
