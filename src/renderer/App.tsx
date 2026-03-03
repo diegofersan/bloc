@@ -11,6 +11,8 @@ import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
 import IdeaButton from './components/IdeaButton'
 import { useTaskStore } from './stores/taskStore'
+import { useClipboardStore } from './stores/clipboardStore'
+import ClipboardBar from './components/ClipboardBar'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
 import { usePomodoroStore, type PomodoroStatus } from './stores/pomodoroStore'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
@@ -265,6 +267,15 @@ export default function App() {
   // In-app keyboard shortcut fallback
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
+      // Escape clears clipboard (priority over navigation)
+      if (e.key === 'Escape') {
+        const clipboard = useClipboardStore.getState()
+        if (clipboard.task) {
+          clipboard.clearClipboard()
+          e.stopImmediatePropagation()
+          return
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault()
         toggleCapture()
@@ -274,8 +285,8 @@ export default function App() {
         setShowStandup((v) => !v)
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [toggleCapture])
 
   // Cmd+Z undo delete
@@ -293,11 +304,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [lastDeleted, undoDelete])
 
-  // Show undo toast when task is deleted
+  // Show undo toast when task is deleted or moved
   useEffect(() => {
     if (lastDeleted) {
+      const isMoved = !!lastDeleted.movedTo
       setToast({
-        message: 'Tarefa eliminada',
+        message: isMoved ? 'Tarefa movida' : 'Tarefa eliminada',
         visible: true,
         action: {
           label: 'Desfazer (⌘Z)',
@@ -328,6 +340,7 @@ export default function App() {
         <NavigationListener />
         <PomodoroRouteGuard />
         <AnimatedRoutes />
+        <ClipboardBar />
         <PomodoroReturnBar />
         <QuickCaptureOverlay
           visible={showCapture}

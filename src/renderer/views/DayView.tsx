@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTaskStore, type Task } from '../stores/taskStore'
+import { useClipboardStore } from '../stores/clipboardStore'
 import TaskEditor from '../components/TaskEditor'
 import DistractionItem from '../components/DistractionItem'
 import PomodoroTimer from '../components/PomodoroTimer'
@@ -137,12 +138,14 @@ const NARROW_BREAKPOINT = 640
 interface DayViewProps {
   date?: string
   embedded?: boolean
+  onToast?: (message: string, action?: { label: string; onClick: () => void }) => void
 }
 
 export default function DayView(props: DayViewProps) {
   const params = useParams<{ date: string }>()
   const date = props.date || params.date
   const embedded = props.embedded || false
+  const onToast = props.onToast
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -179,10 +182,12 @@ export default function DayView(props: DayViewProps) {
   }, [date, embedded])
 
   // Escape to go back (only in standalone mode — timeline handles its own escape)
+  // If clipboard is active, let App.tsx handle Escape to clear clipboard instead
   useEffect(() => {
     if (embedded) return
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
+        if (useClipboardStore.getState().task) return
         navigate('/')
       }
     }
@@ -274,7 +279,7 @@ export default function DayView(props: DayViewProps) {
   if (embedded) {
     return (
       <div ref={containerRef} className="h-full flex flex-col bg-bg-primary overflow-hidden">
-        <TaskEditor date={date!} tasks={tasks} />
+        <TaskEditor date={date!} tasks={tasks} onToast={onToast} />
       </div>
     )
   }
@@ -363,7 +368,7 @@ export default function DayView(props: DayViewProps) {
         {/* Active panel — full width */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'tasks' ? (
-            <TaskEditor date={date!} tasks={tasks} />
+            <TaskEditor date={date!} tasks={tasks} onToast={onToast} />
           ) : (
             <DistractionPanelNarrow date={date!} />
           )}
@@ -421,7 +426,7 @@ export default function DayView(props: DayViewProps) {
 
         {/* Tasks */}
         <div className="flex-1 overflow-hidden">
-          <TaskEditor date={date!} tasks={tasks} />
+          <TaskEditor date={date!} tasks={tasks} onToast={onToast} />
         </div>
       </div>
 

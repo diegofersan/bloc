@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2 } from 'lucide-react'
+import { Sparkles, X, Loader2, Move, Copy } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore, type Task } from '../stores/taskStore'
+import { useClipboardStore } from '../stores/clipboardStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { expandTaskV2 } from '../services/expansionPipeline'
 
@@ -46,6 +47,10 @@ export default function EditableTaskRow({
 }: EditableTaskRowProps) {
   const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
+  const clipboardTaskId = useClipboardStore((s) => s.taskId)
+  const clipboardMode = useClipboardStore((s) => s.mode)
+  const setClipboard = useClipboardStore((s) => s.setClipboard)
+  const isInClipboard = clipboardTaskId === task.id
   const [hovered, setHovered] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [localText, setLocalText] = useState(task.text)
@@ -123,7 +128,7 @@ export default function EditableTaskRow({
       layout
     >
       <div
-        className={`task-row group flex items-center gap-3 py-2.5${allSubtasksDone ? ' opacity-60' : ''}`}
+        className={`task-row group flex items-center gap-3 py-2.5${allSubtasksDone ? ' opacity-60' : ''}${isInClipboard && clipboardMode === 'move' ? ' opacity-40' : ''}${isInClipboard && clipboardMode === 'copy' ? ' border-l-2 border-dashed border-ai' : ''}`}
         style={{ paddingLeft: `${depth * 24 + 8}px`, paddingRight: '8px' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -184,6 +189,25 @@ export default function EditableTaskRow({
         />
 
         <div className={`flex items-center gap-0.5 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'} group-focus-within:opacity-100`}>
+          {depth === 0 && !isInClipboard && (
+            <>
+              <button
+                onClick={() => setClipboard(task, date, 'move')}
+                aria-label="Mover tarefa"
+                className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
+              >
+                <Move size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
+              </button>
+              <button
+                onClick={() => setClipboard(task, date, 'copy')}
+                aria-label="Copiar tarefa"
+                className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
+              >
+                <Copy size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
+              </button>
+            </>
+          )}
+
           <button
             onClick={handleExpand}
             disabled={task.isExpanding}

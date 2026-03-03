@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useClipboardStore } from './clipboardStore'
 
 export interface Task {
   id: string
@@ -29,6 +30,8 @@ interface DeletedTask {
   task: Task
   date: string
   index: number
+  movedTo?: string
+  movedTaskId?: string
 }
 
 interface TaskState {
@@ -47,6 +50,8 @@ interface TaskState {
   insertSubtaskAfter: (date: string, parentId: string, afterSubtaskId: string, text: string) => string
   removeSubtask: (date: string, parentId: string, subtaskId: string) => void
   getTasksForDate: (date: string) => Task[]
+  moveTask: (fromKey: string, toKey: string, taskId: string) => void
+  copyTask: (fromKey: string, toKey: string, task: Task) => void
   getDatesWithTasks: () => string[]
   addDistraction: (date: string, text: string) => void
   updateDistractionText: (date: string, id: string, text: string) => void
@@ -185,6 +190,24 @@ function removeSubtaskFromParent(tasks: Task[], parentId: string, subtaskId: str
   })
 }
 
+function cloneTaskWithNewIds(task: Task, newDate: string): Task {
+  return {
+    ...task,
+    id: crypto.randomUUID(),
+    date: newDate,
+    createdAt: Date.now(),
+    subtasks: task.subtasks.map((s) => cloneTaskWithNewIds(s, newDate))
+  }
+}
+
+function updateTaskDate(task: Task, newDate: string): Task {
+  return {
+    ...task,
+    date: newDate,
+    subtasks: task.subtasks.map((s) => updateTaskDate(s, newDate))
+  }
+}
+
 function cleanExpandingFromTasks(tasks: Task[]): Task[] {
   return tasks.map((task) => ({
     ...task,
@@ -243,6 +266,11 @@ export const useTaskStore = create<TaskState>()(
           } else {
             newTasks[date] = updated
           }
+          // Clear clipboard if the removed task is in it
+          const clipboard = useClipboardStore.getState()
+          if (clipboard.taskId === taskId) {
+            clipboard.clearClipboard()
+          }
           return {
             tasks: newTasks,
             lastDeleted: task ? { task, date, index: Math.max(0, index) } : state.lastDeleted
@@ -250,17 +278,62 @@ export const useTaskStore = create<TaskState>()(
         })
       },
 
+      moveTask: (fromKey, toKey, taskId) => {
+        set((state) => {
+          const fromTasks = state.tasks[fromKey]
+          if (!fromTasks) return state
+          const task = findTaskInList(fromTasks, taskId)
+          if (!task) return state
+          const index = fromTasks.findIndex((t) => t.id === taskId)
+          const movedTask = updateTaskDate(task, toKey)
+          const updatedFrom = removeTaskFromList(fromTasks, taskId)
+          const newTasks = { ...state.tasks }
+          if (updatedFrom.length === 0) {
+            delete newTasks[fromKey]
+          } else {
+            newTasks[fromKey] = updatedFrom
+          }
+          newTasks[toKey] = [...(newTasks[toKey] || []), movedTask]
+          return {
+            tasks: newTasks,
+            lastDeleted: { task, date: fromKey, index: Math.max(0, index), movedTo: toKey, movedTaskId: movedTask.id }
+          }
+        })
+      },
+
+      copyTask: (_fromKey, toKey, task) => {
+        const cloned = cloneTaskWithNewIds(task, toKey)
+        set((state) => ({
+          tasks: {
+            ...state.tasks,
+            [toKey]: [...(state.tasks[toKey] || []), cloned]
+          }
+        }))
+      },
+
       undoDelete: () => {
         const { lastDeleted } = get()
         if (!lastDeleted) return
         set((state) => {
-          const dateTasks = [...(state.tasks[lastDeleted.date] || [])]
+          const newTasks = { ...state.tasks }
+          // If this was a move, remove from destination
+          if (lastDeleted.movedTo && lastDeleted.movedTaskId) {
+            const destTasks = newTasks[lastDeleted.movedTo]
+            if (destTasks) {
+              const updated = destTasks.filter((t) => t.id !== lastDeleted.movedTaskId)
+              if (updated.length === 0) {
+                delete newTasks[lastDeleted.movedTo]
+              } else {
+                newTasks[lastDeleted.movedTo] = updated
+              }
+            }
+          }
+          // Restore to original position
+          const dateTasks = [...(newTasks[lastDeleted.date] || [])]
           const idx = Math.min(lastDeleted.index, dateTasks.length)
           dateTasks.splice(idx, 0, lastDeleted.task)
-          return {
-            tasks: { ...state.tasks, [lastDeleted.date]: dateTasks },
-            lastDeleted: null
-          }
+          newTasks[lastDeleted.date] = dateTasks
+          return { tasks: newTasks, lastDeleted: null }
         })
       },
 

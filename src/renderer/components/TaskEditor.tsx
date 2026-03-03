@@ -1,11 +1,14 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
+import { ClipboardPaste } from 'lucide-react'
 import { useTaskStore, type Task } from '../stores/taskStore'
+import { useClipboardStore } from '../stores/clipboardStore'
 import { AnimatePresence } from 'framer-motion'
 import EditableTaskRow from './EditableTaskRow'
 
 interface TaskEditorProps {
   date: string
   tasks: Task[]
+  onToast?: (message: string, action?: { label: string; onClick: () => void }) => void
 }
 
 function flattenTaskIds(tasks: Task[]): string[] {
@@ -30,10 +33,16 @@ function findParentId(tasks: Task[], targetId: string): string | null {
   return null
 }
 
-export default function TaskEditor({ date, tasks }: TaskEditorProps) {
-  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask } = useTaskStore()
+export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
+  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask } = useTaskStore()
+  const clipboardTask = useClipboardStore((s) => s.task)
+  const clipboardFromKey = useClipboardStore((s) => s.fromKey)
+  const clipboardMode = useClipboardStore((s) => s.mode)
+  const clearClipboard = useClipboardStore((s) => s.clearClipboard)
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const showPaste = clipboardTask && clipboardMode && clipboardFromKey !== date
 
   const flatIds = useMemo(() => flattenTaskIds(tasks), [tasks])
 
@@ -109,6 +118,17 @@ export default function TaskEditor({ date, tasks }: TaskEditorProps) {
     [flatIds]
   )
 
+  const handlePaste = useCallback(() => {
+    if (!clipboardTask || !clipboardMode || !clipboardFromKey) return
+    if (clipboardMode === 'move') {
+      moveTask(clipboardFromKey, date, clipboardTask.id)
+    } else {
+      copyTask(clipboardFromKey, date, clipboardTask)
+      onToast?.('Tarefa copiada', undefined)
+    }
+    clearClipboard()
+  }, [clipboardTask, clipboardMode, clipboardFromKey, date, moveTask, copyTask, clearClipboard, onToast])
+
   const handleBlurCleanup = useCallback(
     (taskId: string, text: string) => {
       if (text.trim() === '') {
@@ -129,6 +149,21 @@ export default function TaskEditor({ date, tasks }: TaskEditorProps) {
           Tarefas
         </h2>
       </div>
+
+      {showPaste && (
+        <div className="shrink-0 px-5 pb-2">
+          <button
+            onClick={handlePaste}
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg border border-dashed border-accent/40 text-accent hover:bg-accent/5 transition-colors text-sm"
+          >
+            <ClipboardPaste size={14} />
+            <span>Colar aqui</span>
+            <span className="text-xs text-text-muted truncate max-w-[200px]">
+              — {clipboardTask?.text}
+            </span>
+          </button>
+        </div>
+      )}
 
       <div
         ref={containerRef}
