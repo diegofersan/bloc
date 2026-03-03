@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { Palette, Trash2, GripVertical } from 'lucide-react'
 import type { TimeBlock, TimeBlockColor } from '../stores/timeBlockStore'
 import ColorPicker from './ColorPicker'
+import ConfirmDialog from './ConfirmDialog'
 
 const HOUR_HEIGHT = 60
 const SNAP_MINUTES = 15
@@ -47,6 +48,7 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
   const [pickerAnchor, setPickerAnchor] = useState<{ top: number; left: number } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const dragRef = useRef<{ startY: number; startTime: number }>({ startY: 0, startTime: 0 })
   const resizeRef = useRef<{ startY: number; startEnd: number }>({ startY: 0, startEnd: 0 })
   const didDrag = useRef(false)
@@ -173,7 +175,7 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
           <button
             onClick={(e) => {
               e.stopPropagation()
-              onRemove(block.id)
+              setShowDeleteConfirm(true)
             }}
             className="p-0.5 rounded hover:bg-black/5 transition-colors"
             aria-label="Eliminar"
@@ -197,6 +199,21 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onClick, grid
       <div
         onMouseDown={handleResizeStart}
         className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize"
+      />
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        visible={showDeleteConfirm}
+        title="Tens a certeza que queres eliminar este bloco?"
+        description={`"${block.title || 'Sem título'}" sera movido para a lixeira.`}
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        destructive
+        onConfirm={() => {
+          setShowDeleteConfirm(false)
+          onRemove(block.id)
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
       />
     </motion.div>
   )

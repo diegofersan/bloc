@@ -6,11 +6,13 @@ import CalendarView from './views/CalendarView'
 import TimelineView from './views/TimelineView'
 import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
+import TrashView from './views/TrashView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
 import IdeaButton from './components/IdeaButton'
 import { useTaskStore } from './stores/taskStore'
+import { useTimeBlockStore } from './stores/timeBlockStore'
 import { useClipboardStore } from './stores/clipboardStore'
 import ClipboardBar from './components/ClipboardBar'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
@@ -142,6 +144,7 @@ function AnimatedRoutes() {
         <Route path="/day/:date" element={<TimelineView />} />
         <Route path="/inbox" element={<InboxView />} />
         <Route path="/settings" element={<SettingsView />} />
+        <Route path="/trash" element={<TrashView />} />
       </Routes>
     </motion.div>
   )
@@ -257,6 +260,12 @@ export default function App() {
   useEffect(() => {
     cleanOldDistractions()
   }, [cleanOldDistractions])
+
+  // Cleanup old deleted blocks on mount
+  const cleanOldDeletedBlocks = useTimeBlockStore((s) => s.cleanOldDeletedBlocks)
+  useEffect(() => {
+    cleanOldDeletedBlocks()
+  }, [cleanOldDeletedBlocks])
 
   // IPC listener for quick capture
   useEffect(() => {

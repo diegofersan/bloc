@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useSettingsStore, formatTzOffset, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
@@ -483,6 +483,19 @@ export default function SettingsView() {
               </select>
             </div>
           </section>
+
+          <hr className="border-border my-8" />
+
+          {/* Trash */}
+          <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Dados</h3>
+          <button
+            onClick={() => navigate('/trash')}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-bg-hover transition-colors w-full text-left mb-4"
+          >
+            <Trash2 size={14} className="text-text-muted" />
+            <span className="text-sm text-text-secondary">Lixeira de blocos</span>
+            <span className="ml-auto text-xs text-text-muted">Blocos eliminados</span>
+          </button>
 
           <hr className="border-border my-8" />
 
