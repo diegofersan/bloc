@@ -34,7 +34,7 @@ function findParentId(tasks: Task[], targetId: string): string | null {
 }
 
 export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
-  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask } = useTaskStore()
+  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask } = useTaskStore()
   const clipboardTask = useClipboardStore((s) => s.task)
   const clipboardFromKey = useClipboardStore((s) => s.fromKey)
   const clipboardMode = useClipboardStore((s) => s.mode)
@@ -129,6 +129,24 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
     clearClipboard()
   }, [clipboardTask, clipboardMode, clipboardFromKey, date, moveTask, copyTask, clearClipboard, onToast])
 
+  const handleIndent = useCallback(
+    (taskId: string) => {
+      const success = indentTaskAsSubtask(date, taskId)
+      if (success) {
+        requestAnimationFrame(() => setActiveTaskId(taskId))
+      }
+    },
+    [date, indentTaskAsSubtask]
+  )
+
+  const handleAddSubtask = useCallback(
+    (taskId: string) => {
+      const newId = addManualSubtask(date, taskId)
+      requestAnimationFrame(() => setActiveTaskId(newId))
+    },
+    [date, addManualSubtask]
+  )
+
   const handleBlurCleanup = useCallback(
     (taskId: string, text: string) => {
       if (text.trim() === '') {
@@ -183,7 +201,7 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
         ) : (
           <>
             <AnimatePresence>
-              {tasks.map((task) => (
+              {tasks.map((task, i) => (
                 <EditableTaskRow
                   key={task.id}
                   task={task}
@@ -201,6 +219,8 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                   onSubtaskArrowUp={(id) => handleArrowUp(id)}
                   onSubtaskArrowDown={(id) => handleArrowDown(id)}
                   onBlurCleanup={handleBlurCleanup}
+                  onIndent={i > 0 ? () => handleIndent(task.id) : undefined}
+                  onAddSubtask={() => handleAddSubtask(task.id)}
                 />
               ))}
             </AnimatePresence>

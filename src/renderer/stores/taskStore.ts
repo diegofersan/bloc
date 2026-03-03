@@ -43,6 +43,8 @@ interface TaskState {
   removeTask: (date: string, taskId: string) => void
   undoDelete: () => void
   addSubtasks: (date: string, taskId: string, subtaskTexts: string[]) => void
+  addManualSubtask: (date: string, parentTaskId: string, text?: string) => string
+  indentTaskAsSubtask: (date: string, taskId: string) => boolean
   addSubtaskToSubtask: (date: string, taskId: string, subtaskId: string, subtaskTexts: string[]) => void
   setTaskExpanding: (date: string, taskId: string, expanding: boolean) => void
   updateTaskText: (date: string, taskId: string, text: string) => void
@@ -348,6 +350,62 @@ export const useTaskStore = create<TaskState>()(
             }
           }
         })
+      },
+
+      addManualSubtask: (date, parentTaskId, text = '') => {
+        const newId = crypto.randomUUID()
+        set((state) => {
+          const dateTasks = state.tasks[date]
+          if (!dateTasks) return state
+          const newSubtask: Task = {
+            id: newId,
+            text,
+            completed: false,
+            subtasks: [],
+            date,
+            createdAt: Date.now()
+          }
+          function appendSubtask(tasks: Task[]): Task[] {
+            return tasks.map((task) => {
+              if (task.id === parentTaskId) {
+                return { ...task, subtasks: [...task.subtasks, newSubtask] }
+              }
+              if (task.subtasks.length > 0) {
+                return { ...task, subtasks: appendSubtask(task.subtasks) }
+              }
+              return task
+            })
+          }
+          return {
+            tasks: {
+              ...state.tasks,
+              [date]: appendSubtask(dateTasks)
+            }
+          }
+        })
+        return newId
+      },
+
+      indentTaskAsSubtask: (date, taskId) => {
+        const state = get()
+        const dateTasks = state.tasks[date]
+        if (!dateTasks) return false
+        const index = dateTasks.findIndex((t) => t.id === taskId)
+        if (index <= 0) return false // Can't indent first task or not found at root
+        const taskToIndent = dateTasks[index]
+        const parentTask = dateTasks[index - 1]
+        const updatedTasks = dateTasks.filter((t) => t.id !== taskId)
+        const updatedParent = {
+          ...parentTask,
+          subtasks: [...parentTask.subtasks, { ...taskToIndent, subtasks: taskToIndent.subtasks }]
+        }
+        set({
+          tasks: {
+            ...state.tasks,
+            [date]: updatedTasks.map((t) => (t.id === parentTask.id ? updatedParent : t))
+          }
+        })
+        return true
       },
 
       addSubtaskToSubtask: (date, taskId, subtaskId, subtaskTexts) => {

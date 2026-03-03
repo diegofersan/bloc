@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Move, Copy } from 'lucide-react'
+import { Sparkles, X, Loader2, Move, Copy, Plus } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import { useClipboardStore } from '../stores/clipboardStore'
@@ -24,6 +24,8 @@ interface EditableTaskRowProps {
   onSubtaskArrowUp?: (id: string) => void
   onSubtaskArrowDown?: (id: string) => void
   onBlurCleanup?: (taskId: string, text: string) => void
+  onIndent?: () => void
+  onAddSubtask?: () => void
 }
 
 export default function EditableTaskRow({
@@ -43,7 +45,9 @@ export default function EditableTaskRow({
   onSubtaskDeleteAndFocusAbove,
   onSubtaskArrowUp,
   onSubtaskArrowDown,
-  onBlurCleanup
+  onBlurCleanup,
+  onIndent,
+  onAddSubtask
 }: EditableTaskRowProps) {
   const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
@@ -80,6 +84,12 @@ export default function EditableTaskRow({
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       onArrowDown()
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault()
+      if (onIndent) {
+        updateTaskText(date, task.id, localText)
+        onIndent()
+      }
     } else if (e.key === 'Escape') {
       inputRef.current?.blur()
     }
@@ -115,8 +125,9 @@ export default function EditableTaskRow({
 
   const iconSize = depth > 0 ? 14 : 16
   const completedCount = task.subtasks.filter(s => s.completed).length
-  const allSubtasksDone = task.subtasks.length > 0 && task.subtasks.every(s => s.completed)
   const hasSubtasks = task.subtasks.length > 0
+  const allSubtasksDone = hasSubtasks && task.subtasks.every(s => s.completed)
+  const suggestComplete = allSubtasksDone && !task.completed
 
   return (
     <motion.div
@@ -128,7 +139,7 @@ export default function EditableTaskRow({
       layout
     >
       <div
-        className={`task-row group flex items-center gap-3 py-2.5${allSubtasksDone ? ' opacity-60' : ''}${isInClipboard && clipboardMode === 'move' ? ' opacity-40' : ''}${isInClipboard && clipboardMode === 'copy' ? ' border-l-2 border-dashed border-ai' : ''}`}
+        className={`task-row group flex items-center gap-3 py-2.5${isInClipboard && clipboardMode === 'move' ? ' opacity-40' : ''}${isInClipboard && clipboardMode === 'copy' ? ' border-l-2 border-dashed border-ai' : ''}`}
         style={{ paddingLeft: `${depth * 24 + 8}px`, paddingRight: '8px' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -141,9 +152,11 @@ export default function EditableTaskRow({
           className={`shrink-0 w-4 h-4 ${depth > 0 ? 'rounded-sm' : 'rounded-full'} border-[1.5px] flex items-center justify-center transition-all ${
             task.completed
               ? 'bg-success border-success opacity-100'
-              : hovered || isFocused
-                ? 'border-border-light opacity-100'
-                : 'border-border opacity-40'
+              : suggestComplete
+                ? 'border-success opacity-100 animate-pulse'
+                : hovered || isFocused
+                  ? 'border-border-light opacity-100'
+                  : 'border-border opacity-40'
           }`}
         >
           {task.completed && (
@@ -168,7 +181,7 @@ export default function EditableTaskRow({
         </button>
 
         {hasSubtasks && (
-          <span className="text-text-muted text-xs tabular-nums" aria-label={`${completedCount} de ${task.subtasks.length} subtarefas concluídas`}>
+          <span className={`text-xs tabular-nums ${suggestComplete ? 'text-success font-medium' : 'text-text-muted'}`} aria-label={`${completedCount} de ${task.subtasks.length} subtarefas concluídas`}>
             {completedCount}/{task.subtasks.length}
           </span>
         )}
@@ -206,6 +219,16 @@ export default function EditableTaskRow({
                 <Copy size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
               </button>
             </>
+          )}
+
+          {onAddSubtask && (
+            <button
+              onClick={onAddSubtask}
+              aria-label="Adicionar subtarefa"
+              className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
+            >
+              <Plus size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
+            </button>
           )}
 
           <button
