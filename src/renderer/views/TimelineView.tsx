@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
@@ -11,6 +11,7 @@ import DistractionItem from '../components/DistractionItem'
 import DayView from './DayView'
 import PomodoroTimer from '../components/PomodoroTimer'
 import DailyStandupModal from '../components/DailyStandupModal'
+import PendingTasksPanel from '../components/PendingTasksPanel'
 import HourglassIndicator from '../components/HourglassIndicator'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 import { syncDate } from '../services/googleCalendarSync'
@@ -130,10 +131,19 @@ function DetailBlockHeader({
 export default function TimelineView() {
   const { date } = useParams<{ date: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [viewMode, setViewMode] = useState<ViewMode>('timeline')
-  const viewModeRef = useRef<ViewMode>('timeline')
-  const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
+  const initialBlockId = searchParams.get('block')
+  const [viewMode, setViewMode] = useState<ViewMode>(initialBlockId ? 'detail' : 'timeline')
+  const viewModeRef = useRef<ViewMode>(initialBlockId ? 'detail' : 'timeline')
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(initialBlockId)
+
+  // Clear the ?block= param after using it so back navigation stays clean
+  useEffect(() => {
+    if (initialBlockId) {
+      setSearchParams({}, { replace: true })
+    }
+  }, [])
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -151,6 +161,22 @@ export default function TimelineView() {
   const distractions = (allDistractions[date!] || []).filter((d) => d.status === 'pending')
   const [distractionInput, setDistractionInput] = useState('')
 
+  // Pending tasks count for badges
+  const allStoreTasks = useTaskStore((s) => s.tasks)
+  const allTaskRefs = useTaskStore((s) => s.taskRefs)
+  const pendingCount = useMemo(() => {
+    if (!date) return 0
+    let count = 0
+    const linkedIds = new Set((allTaskRefs[date] || []).map((r) => r.originTaskId))
+    for (const [d, taskList] of Object.entries(allStoreTasks)) {
+      if (d.includes('__block__') || d === date) continue
+      for (const task of taskList) {
+        if (!task.completed && !linkedIds.has(task.id)) count++
+      }
+    }
+    return count
+  }, [allStoreTasks, allTaskRefs, date])
+
   // Split panel divider
   const containerRef = useRef<HTMLDivElement>(null)
   const DIVIDER_KEY = 'bloc-timeline-divider-pct'
@@ -162,7 +188,8 @@ export default function TimelineView() {
 
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640)
   const [showStandup, setShowStandup] = useState(false)
-  const [activeTab, setActiveTab] = useState<'timeline' | 'distractions'>('timeline')
+  const [activeTab, setActiveTab] = useState<'timeline' | 'pending' | 'distractions'>('timeline')
+  const [detailRightTab, setDetailRightTab] = useState<'pending' | 'distractions'>('pending')
   useEffect(() => {
     const onResize = () => setIsNarrow(window.innerWidth < 640)
     window.addEventListener('resize', onResize)
@@ -366,6 +393,17 @@ export default function TimelineView() {
               Tarefas
             </button>
             <button
+              onClick={() => setActiveTab('pending')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'pending' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              Pendentes
+              {pendingCount > 0 && (
+                <span className="ml-1.5 text-xs font-medium text-amber-600">{pendingCount}</span>
+              )}
+            </button>
+            <button
               onClick={() => setActiveTab('distractions')}
               className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 activeTab === 'distractions' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
@@ -381,6 +419,8 @@ export default function TimelineView() {
           <div className="flex-1 overflow-hidden">
             {activeTab === 'timeline' ? (
               <DayView date={`${date!}__block__${activeBlockId}`} embedded />
+            ) : activeTab === 'pending' ? (
+              <PendingTasksPanel currentDate={date!} />
             ) : (
               <div className="flex flex-col h-full overflow-hidden">
                 <div className="shrink-0 px-3 pt-2 pb-3">
@@ -445,45 +485,71 @@ export default function TimelineView() {
             <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
           </div>
 
-          {/* Right: distractions (belong to the day, not the block) */}
+          {/* Right: pending tasks + distractions */}
           <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel flex flex-col">
-            <div className="shrink-0 px-5 pt-4 pb-4">
-              <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-xs font-medium text-text-muted/70 uppercase tracking-wider">Distrações</h2>
-                {distractions.length > 0 && (
-                  <span className="text-xs font-medium text-distraction bg-distraction/15 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1.5">{distractions.length}</span>
+            {/* Tab bar */}
+            <div className="shrink-0 px-4 pt-3 pb-2 flex gap-1">
+              <button
+                onClick={() => setDetailRightTab('pending')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  detailRightTab === 'pending' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                Pendentes
+                {pendingCount > 0 && (
+                  <span className="ml-1.5 text-xs font-medium text-amber-600">{pendingCount}</span>
                 )}
-              </div>
-              <input
-                type="text"
-                value={distractionInput}
-                onChange={(e) => setDistractionInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && distractionInput.trim()) {
-                    addDistraction(date!, distractionInput.trim())
-                    setDistractionInput('')
-                  }
-                }}
-                placeholder="Anotar distração..."
-                className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
-              />
+              </button>
+              <button
+                onClick={() => setDetailRightTab('distractions')}
+                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  detailRightTab === 'distractions' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                Distrações
+                {distractions.length > 0 && (
+                  <span className="ml-1.5 text-xs font-medium text-distraction">{distractions.length}</span>
+                )}
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 pb-6">
-              {distractions.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-text-muted/50 text-xs text-center leading-relaxed">
-                    Capture pensamentos aqui...<br />
-                    <span className="text-xs">⌘⇧D para captura rápida</span>
-                  </p>
+
+            {detailRightTab === 'pending' ? (
+              <PendingTasksPanel currentDate={date!} />
+            ) : (
+              <>
+                <div className="shrink-0 px-5 pt-2 pb-4">
+                  <input
+                    type="text"
+                    value={distractionInput}
+                    onChange={(e) => setDistractionInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && distractionInput.trim()) {
+                        addDistraction(date!, distractionInput.trim())
+                        setDistractionInput('')
+                      }
+                    }}
+                    placeholder="Anotar distração..."
+                    className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
+                  />
                 </div>
-              ) : (
-                <AnimatePresence>
-                  {distractions.map((d) => (
-                    <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
-                  ))}
-                </AnimatePresence>
-              )}
-            </div>
+                <div className="flex-1 overflow-y-auto px-3 pb-6">
+                  {distractions.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-text-muted/50 text-xs text-center leading-relaxed">
+                        Capture pensamentos aqui...<br />
+                        <span className="text-xs">⌘⇧D para captura rápida</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <AnimatePresence>
+                      {distractions.map((d) => (
+                        <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
+                      ))}
+                    </AnimatePresence>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

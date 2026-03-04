@@ -7,10 +7,19 @@ export interface Task {
   text: string
   completed: boolean
   completedAt?: number
+  completedFromDate?: string
   subtasks: Task[]
   date: string
   createdAt: number
   isExpanding?: boolean
+  references?: Array<{ date: string; taskId: string }>
+}
+
+export interface TaskRef {
+  id: string
+  originDate: string      // date key onde a tarefa original vive
+  originTaskId: string    // UUID da tarefa original
+  addedAt: number         // timestamp quando a referência foi criada
 }
 
 export type DistractionStatus = 'pending' | 'dismissed' | 'converted'
@@ -36,6 +45,7 @@ interface DeletedTask {
 
 interface TaskState {
   tasks: Record<string, Task[]>
+  taskRefs: Record<string, TaskRef[]>
   distractions: Record<string, Distraction[]>
   lastDeleted: DeletedTask | null
   addTask: (date: string, text: string) => void
@@ -64,6 +74,11 @@ interface TaskState {
   getPendingDistractionCount: () => number
   getDatesWithPendingDistractions: () => string[]
   cleanOldDistractions: (daysToKeep?: number) => void
+  createTaskRef: (originDate: string, taskId: string, targetDate: string) => void
+  toggleTaskRef: (refDate: string, refId: string) => void
+  removeTaskRef: (refDate: string, refId: string) => void
+  getResolvedTask: (ref: TaskRef) => Task | null
+  getPendingTasksAcrossDates: () => Array<{ task: Task; date: string }>
 }
 
 function toggleTaskInList(tasks: Task[], taskId: string): Task[] {
@@ -192,6 +207,18 @@ function removeSubtaskFromParent(tasks: Task[], parentId: string, subtaskId: str
   })
 }
 
+function updateTaskInList(tasks: Task[], taskId: string, updater: (task: Task) => Task): Task[] {
+  return tasks.map((task) => {
+    if (task.id === taskId) {
+      return updater(task)
+    }
+    if (task.subtasks.length > 0) {
+      return { ...task, subtasks: updateTaskInList(task.subtasks, taskId, updater) }
+    }
+    return task
+  })
+}
+
 function cloneTaskWithNewIds(task: Task, newDate: string): Task {
   return {
     ...task,
@@ -222,6 +249,7 @@ export const useTaskStore = create<TaskState>()(
   persist(
     (set, get) => ({
       tasks: {},
+      taskRefs: {},
       distractions: {},
       lastDeleted: null,
 
@@ -649,6 +677,114 @@ export const useTaskStore = create<TaskState>()(
         return dates
       },
 
+      createTaskRef: (originDate, taskId, targetDate) => {
+        const state = get()
+        const dateTasks = state.tasks[originDate]
+        if (!dateTasks) return
+        const task = findTaskInList(dateTasks, taskId)
+        if (!task) return
+
+        const refId = crypto.randomUUID()
+        const ref: TaskRef = {
+          id: refId,
+          originDate,
+          originTaskId: taskId,
+          addedAt: Date.now()
+        }
+
+        set((s) => ({
+          tasks: {
+            ...s.tasks,
+            [originDate]: updateTaskInList(s.tasks[originDate], taskId, (t) => ({
+              ...t,
+              references: [...(t.references || []), { date: targetDate, taskId: refId }]
+            }))
+          },
+          taskRefs: {
+            ...s.taskRefs,
+            [targetDate]: [...(s.taskRefs[targetDate] || []), ref]
+          }
+        }))
+      },
+
+      toggleTaskRef: (refDate, refId) => {
+        const state = get()
+        const refs = state.taskRefs[refDate]
+        if (!refs) return
+        const ref = refs.find((r) => r.id === refId)
+        if (!ref) return
+        const originTasks = state.tasks[ref.originDate]
+        if (!originTasks) return
+        const task = findTaskInList(originTasks, ref.originTaskId)
+        if (!task) return
+
+        const nowCompleted = !task.completed
+        set((s) => ({
+          tasks: {
+            ...s.tasks,
+            [ref.originDate]: updateTaskInList(s.tasks[ref.originDate], ref.originTaskId, (t) => ({
+              ...t,
+              completed: nowCompleted,
+              completedAt: nowCompleted ? Date.now() : undefined,
+              completedFromDate: nowCompleted ? refDate : undefined
+            }))
+          }
+        }))
+      },
+
+      removeTaskRef: (refDate, refId) => {
+        const state = get()
+        const refs = state.taskRefs[refDate]
+        if (!refs) return
+        const ref = refs.find((r) => r.id === refId)
+        if (!ref) return
+
+        const updatedRefs = refs.filter((r) => r.id !== refId)
+        const newTaskRefs = { ...state.taskRefs }
+        if (updatedRefs.length === 0) {
+          delete newTaskRefs[refDate]
+        } else {
+          newTaskRefs[refDate] = updatedRefs
+        }
+
+        const originTasks = state.tasks[ref.originDate]
+        if (!originTasks) {
+          set({ taskRefs: newTaskRefs })
+          return
+        }
+
+        set((s) => ({
+          tasks: {
+            ...s.tasks,
+            [ref.originDate]: updateTaskInList(s.tasks[ref.originDate], ref.originTaskId, (t) => ({
+              ...t,
+              references: (t.references || []).filter((r) => r.taskId !== refId)
+            }))
+          },
+          taskRefs: newTaskRefs
+        }))
+      },
+
+      getResolvedTask: (ref) => {
+        const originTasks = get().tasks[ref.originDate]
+        if (!originTasks) return null
+        return findTaskInList(originTasks, ref.originTaskId)
+      },
+
+      getPendingTasksAcrossDates: () => {
+        const { tasks } = get()
+        const result: Array<{ task: Task; date: string }> = []
+        for (const [date, taskList] of Object.entries(tasks)) {
+          if (date.includes('__block__')) continue
+          for (const task of taskList) {
+            if (!task.completed) {
+              result.push({ task, date })
+            }
+          }
+        }
+        return result.sort((a, b) => b.date.localeCompare(a.date))
+      },
+
       cleanOldDistractions: (daysToKeep = 90) => {
         const cutoff = Date.now() - daysToKeep * 24 * 60 * 60 * 1000
         set((state) => {
@@ -672,7 +808,7 @@ export const useTaskStore = create<TaskState>()(
     }),
     {
       name: 'bloc-tasks',
-      version: 1,
+      version: 2,
       partialize: (state) => {
         const cleanedTasks: Record<string, Task[]> = {}
         for (const [date, taskList] of Object.entries(state.tasks)) {
@@ -680,12 +816,16 @@ export const useTaskStore = create<TaskState>()(
         }
         return {
           tasks: cleanedTasks,
+          taskRefs: state.taskRefs,
           distractions: state.distractions
         }
       },
       migrate: (persisted: unknown, version: number) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let data = persisted as any
+
         if (version === 0 || version === undefined) {
-          const old = persisted as { tasks?: Record<string, Task[]> }
+          const old = data as { tasks?: Record<string, Task[]> }
           const tasks: Record<string, Task[]> = {}
           const distractions: Record<string, Distraction[]> = {}
 
@@ -707,9 +847,15 @@ export const useTaskStore = create<TaskState>()(
             }
           }
 
-          return { ...old, tasks, distractions }
+          data = { ...old, tasks, distractions }
         }
-        return persisted
+
+        // v1 → v2: adicionar taskRefs
+        if (!data.taskRefs) {
+          data.taskRefs = {}
+        }
+
+        return data
       }
     }
   )

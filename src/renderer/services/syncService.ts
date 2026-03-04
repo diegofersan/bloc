@@ -1,7 +1,7 @@
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
-import type { Task, Distraction } from '../stores/taskStore'
+import type { Task, TaskRef, Distraction } from '../stores/taskStore'
 
 interface TaskData {
   id: string
@@ -10,6 +10,14 @@ interface TaskData {
   completedAt?: number
   createdAt: number
   subtasks: TaskData[]
+  references?: Array<{ date: string; taskId: string }>
+}
+
+interface TaskRefData {
+  id: string
+  originDate: string
+  originTaskId: string
+  addedAt: number
 }
 
 interface DistractionData {
@@ -39,6 +47,7 @@ interface DayFileData {
   tasks: TaskData[]
   distractions: DistractionData[]
   timeBlocks?: TimeBlockData[]
+  references?: TaskRefData[]
 }
 
 const SYNC_MIGRATED_KEY = 'bloc-icloud-migrated'
@@ -58,7 +67,8 @@ function taskToData(task: Task): TaskData {
     completed: task.completed,
     completedAt: task.completedAt,
     createdAt: task.createdAt,
-    subtasks: task.subtasks.map(taskToData)
+    subtasks: task.subtasks.map(taskToData),
+    references: task.references
   }
 }
 
@@ -70,7 +80,26 @@ function dataToTask(data: TaskData, date: string): Task {
     completedAt: data.completedAt,
     createdAt: data.createdAt,
     date,
-    subtasks: data.subtasks.map((st) => dataToTask(st, date))
+    subtasks: data.subtasks.map((st) => dataToTask(st, date)),
+    references: data.references
+  }
+}
+
+function taskRefToData(ref: TaskRef): TaskRefData {
+  return {
+    id: ref.id,
+    originDate: ref.originDate,
+    originTaskId: ref.originTaskId,
+    addedAt: ref.addedAt
+  }
+}
+
+function dataToTaskRef(data: TaskRefData): TaskRef {
+  return {
+    id: data.id,
+    originDate: data.originDate,
+    originTaskId: data.originTaskId,
+    addedAt: data.addedAt
   }
 }
 
@@ -129,6 +158,7 @@ function dataToTimeBlock(data: TimeBlockData, date: string): TimeBlock {
 function buildDayFileData(date: string): DayFileData {
   const tasks = useTaskStore.getState().tasks[date] || []
   const distractions = useTaskStore.getState().distractions[date] || []
+  const taskRefs = useTaskStore.getState().taskRefs[date] || []
   const pomodoros = usePomodoroStore.getState().completedPomodoros[date] || 0
   const timeBlocks = useTimeBlockStore.getState().blocks[date] || []
 
@@ -138,7 +168,8 @@ function buildDayFileData(date: string): DayFileData {
     updatedAt: Date.now(),
     tasks: tasks.map(taskToData),
     distractions: distractions.map(distractionToData),
-    timeBlocks: timeBlocks.map(timeBlockToData)
+    timeBlocks: timeBlocks.map(timeBlockToData),
+    references: taskRefs.map(taskRefToData)
   }
 }
 
@@ -180,6 +211,12 @@ function applyExternalChange(data: DayFileData): void {
     distractions: { ...taskState.distractions, [data.date]: newDistractions }
   })
 
+  // Apply task references
+  const newRefs = (data.references || []).map(dataToTaskRef)
+  useTaskStore.setState({
+    taskRefs: { ...taskState.taskRefs, [data.date]: newRefs }
+  })
+
   // Apply pomodoros
   if (data.pomodoros !== (pomodoroState.completedPomodoros[data.date] || 0)) {
     usePomodoroStore.setState({
@@ -209,6 +246,7 @@ async function migrateLocalStorageToICloud(): Promise<void> {
   const allDates = new Set<string>()
   for (const date of Object.keys(taskState.tasks)) allDates.add(date)
   for (const date of Object.keys(taskState.distractions)) allDates.add(date)
+  for (const date of Object.keys(taskState.taskRefs)) allDates.add(date)
   for (const date of Object.keys(pomodoroState.completedPomodoros)) allDates.add(date)
 
   for (const date of allDates) {
@@ -225,6 +263,7 @@ async function loadAllFromICloud(): Promise<void> {
 
   const newTasks: Record<string, Task[]> = {}
   const newDistractions: Record<string, Distraction[]> = {}
+  const newTaskRefs: Record<string, TaskRef[]> = {}
   const newPomodoros: Record<string, number> = {}
   const newTimeBlocks: Record<string, TimeBlock[]> = {}
 
@@ -234,6 +273,9 @@ async function loadAllFromICloud(): Promise<void> {
     }
     if (day.distractions.length > 0) {
       newDistractions[day.date] = day.distractions.map((d) => dataToDistraction(d, day.date))
+    }
+    if (day.references && day.references.length > 0) {
+      newTaskRefs[day.date] = day.references.map(dataToTaskRef)
     }
     if (day.pomodoros > 0) {
       newPomodoros[day.date] = day.pomodoros
@@ -250,7 +292,8 @@ async function loadAllFromICloud(): Promise<void> {
 
   useTaskStore.setState({
     tasks: { ...taskState.tasks, ...newTasks },
-    distractions: { ...taskState.distractions, ...newDistractions }
+    distractions: { ...taskState.distractions, ...newDistractions },
+    taskRefs: { ...taskState.taskRefs, ...newTaskRefs }
   })
 
   usePomodoroStore.setState({
@@ -281,14 +324,20 @@ function getChangedDates(
 function subscribeToStoreChanges(): void {
   let prevTasks = useTaskStore.getState().tasks
   let prevDistractions = useTaskStore.getState().distractions
+  let prevTaskRefs = useTaskStore.getState().taskRefs
 
   unsubscribeTasks = useTaskStore.subscribe((state) => {
     const changedTaskDates = getChangedDates(prevTasks, state.tasks)
     const changedDistractionDates = getChangedDates(prevDistractions, state.distractions)
+    const changedRefDates = getChangedDates(
+      prevTaskRefs as unknown as Record<string, unknown[]>,
+      state.taskRefs as unknown as Record<string, unknown[]>
+    )
     prevTasks = state.tasks
     prevDistractions = state.distractions
+    prevTaskRefs = state.taskRefs
 
-    const allChanged = new Set([...changedTaskDates, ...changedDistractionDates])
+    const allChanged = new Set([...changedTaskDates, ...changedDistractionDates, ...changedRefDates])
     for (const date of allChanged) {
       if (date.includes('__block__')) continue // per-block task keys are local-only
       debouncedWrite(date)

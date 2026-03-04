@@ -34,7 +34,34 @@ function findParentId(tasks: Task[], targetId: string): string | null {
 }
 
 export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
-  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask } = useTaskStore()
+  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask, getResolvedTask, removeTaskRef } = useTaskStore()
+  const EMPTY_REFS: import('../stores/taskStore').TaskRef[] = useMemo(() => [], [])
+  // For composite keys (date__block__id), also show refs from the base date
+  const baseDate = useMemo(() => {
+    const idx = date.indexOf('__block__')
+    return idx !== -1 ? date.substring(0, idx) : date
+  }, [date])
+  const taskRefs = useTaskStore((s) => s.taskRefs[baseDate]) ?? EMPTY_REFS
+  // Subscribe to origin dates so we re-render when linked tasks change
+  const allTasks = useTaskStore((s) => s.tasks)
+  const resolvedRefs = useMemo(() => {
+    return taskRefs
+      .map((ref) => {
+        const originTasks = allTasks[ref.originDate]
+        if (!originTasks) return null
+        const findRecursive = (list: import('../stores/taskStore').Task[]): import('../stores/taskStore').Task | null => {
+          for (const t of list) {
+            if (t.id === ref.originTaskId) return t
+            const found = findRecursive(t.subtasks)
+            if (found) return found
+          }
+          return null
+        }
+        const task = findRecursive(originTasks)
+        return task ? { ref, task } : null
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+  }, [taskRefs, allTasks])
   const clipboardTask = useClipboardStore((s) => s.task)
   const clipboardFromKey = useClipboardStore((s) => s.fromKey)
   const clipboardMode = useClipboardStore((s) => s.mode)
@@ -189,7 +216,7 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
         className="flex-1 overflow-y-auto pl-5 pr-4 pb-6 cursor-text"
         onClick={handleClickEmpty}
       >
-        {tasks.length === 0 ? (
+        {tasks.length === 0 && taskRefs.length === 0 ? (
           <div
             className="flex items-center justify-center h-full"
             data-ghost-area="true"
@@ -224,6 +251,58 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                 />
               ))}
             </AnimatePresence>
+
+            {resolvedRefs.map(({ ref, task: linkedTask }) => (
+              <EditableTaskRow
+                key={ref.id}
+                task={linkedTask}
+                date={ref.originDate}
+                isLinked
+                onUnlink={() => removeTaskRef(baseDate, ref.id)}
+                isFocused={activeTaskId === linkedTask.id}
+                activeTaskId={activeTaskId}
+                onFocus={() => setActiveTaskId(linkedTask.id)}
+                onCreateBelow={() => {
+                  // Enter on linked parent → create subtask
+                  const newId = addManualSubtask(ref.originDate, linkedTask.id)
+                  requestAnimationFrame(() => setActiveTaskId(newId))
+                }}
+                onDeleteAndFocusAbove={() => {}}
+                onArrowUp={() => {}}
+                onArrowDown={() => {}}
+                onSubtaskFocus={(id) => setActiveTaskId(id)}
+                onSubtaskCreateBelow={(subtaskId) => {
+                  // Enter on subtask → create sibling subtask
+                  const newId = insertSubtaskAfter(ref.originDate, linkedTask.id, subtaskId, '')
+                  requestAnimationFrame(() => setActiveTaskId(newId))
+                }}
+                onSubtaskDeleteAndFocusAbove={(id) => {
+                  const subs = linkedTask.subtasks
+                  const idx = subs.findIndex((s) => s.id === id)
+                  const focusId = idx > 0 ? subs[idx - 1].id : linkedTask.id
+                  removeSubtask(ref.originDate, linkedTask.id, id)
+                  requestAnimationFrame(() => setActiveTaskId(focusId))
+                }}
+                onSubtaskArrowUp={() => {}}
+                onSubtaskArrowDown={() => {}}
+                onBlurCleanup={handleBlurCleanup}
+                onAddSubtask={() => {
+                  const newId = addManualSubtask(ref.originDate, linkedTask.id)
+                  requestAnimationFrame(() => setActiveTaskId(newId))
+                }}
+                onBreakOut={(subtaskId) => {
+                  // Delete empty subtask from linked task, create new parent task in current block
+                  removeSubtask(ref.originDate, linkedTask.id, subtaskId)
+                  addTask(date, '')
+                  requestAnimationFrame(() => {
+                    const dateTasks = useTaskStore.getState().tasks[date] || []
+                    const last = dateTasks[dateTasks.length - 1]
+                    if (last) setActiveTaskId(last.id)
+                  })
+                }}
+              />
+            ))}
+
             {/* Ghost area below tasks — click to add new */}
             <div
               className="min-h-[100px] flex-1"

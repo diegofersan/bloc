@@ -259,11 +259,15 @@ Regras:
 - Usa bullet points simples, sem emojis
 - Sê factual e conciso — não inventes dados
 - O resumo deve ser profissional mas amigável
-- Cada task dentro de um bloco está relacionada com o título do bloco. Funde o contexto do bloco com a task numa frase natural. Exemplo: bloco "Teste de sync" com task "Preencher formulário" → "Preencher formulário do teste de sync". Bloco "Reunião cliente" com task "Rever agenda" → "Rever agenda da reunião com cliente"
-- Blocos sem tarefas aparecem como actividade simples (ex: "Foco profundo (14:00–16:00)")
+- TEMPO VERBAL É CRUCIAL:
+  - Secção "yesterday" (ontem): usa SEMPRE o pretérito perfeito (passado). Exemplos: "Implementei a funcionalidade X", "Corrigi o bug no formulário", "Desenhei os wireframes", "Revi os pull requests", "Participei na reunião de alinhamento"
+  - Secção "today" (hoje): usa SEMPRE o futuro do indicativo. Exemplos: "Implementarei a funcionalidade Y", "Corrigirei o bug Z", "Farei deploy para staging", "Participarei na reunião", "Escreverei testes unitários"
+  - NUNCA uses infinitivo ("Implementar", "Corrigir") nem presente ("Implemento", "Corrijo")
+- Cada task dentro de um bloco está relacionada com o título do bloco. Funde o contexto do bloco com a task numa frase natural. Exemplo: bloco "Teste de sync" com task "Preencher formulário" → "Preenchi o formulário do teste de sync" (ontem) ou "Preencherei o formulário do teste de sync" (hoje)
+- Blocos sem tarefas aparecem como actividade simples (ex: "Sessão de foco profundo (14:00–16:00)")
 - Tarefas do dia (sem bloco) aparecem normalmente
 - Retorna APENAS um JSON com as keys: "yesterday", "today", "blockers"
-- Cada valor é uma string com bullets formatados
+- Cada valor é uma string com bullets formatados (um bullet por linha, prefixado com "• ")
 - Max 1024 tokens`
 
 function formatBlocksForPrompt(blocks: BlockWithTasks[]): string {

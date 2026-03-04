@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2 } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2, FlaskConical, Eraser, Boxes } from 'lucide-react'
 import { motion } from 'framer-motion'
+import { format, addDays } from 'date-fns'
 import { useSettingsStore, formatTzOffset, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useSiteBlockerStore } from '../stores/siteBlockerStore'
 import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
+import { useTaskStore } from '../stores/taskStore'
+import { useTimeBlockStore } from '../stores/timeBlockStore'
 
 const providers: { id: AIProvider; name: string; description: string }[] = [
   { id: 'openai', name: 'OpenAI', description: 'GPT-4o & mais' },
@@ -52,6 +55,7 @@ export default function SettingsView() {
   const [showGithubToken, setShowGithubToken] = useState(false)
   const [gcalLoading, setGcalLoading] = useState(false)
   const appVersion = window.bloc?.getAppVersion() ?? ''
+  const isDev = !appVersion || appVersion.includes('dev') || location.port !== ''
 
   const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < 640)
   useEffect(() => {
@@ -118,6 +122,77 @@ export default function SettingsView() {
       setGcalLoading(false)
     }
   }, [setGcalCalendars])
+
+  // ─── Dev helpers ───────────────────────────────────────────
+  const handleDevClean = useCallback(() => {
+    if (!confirm('Apagar TODOS os blocos, tarefas e referências?')) return
+    useTaskStore.setState({ tasks: {}, distractions: {}, taskRefs: {} })
+    useTimeBlockStore.setState({ blocks: {}, deletedBlocks: [] })
+  }, [])
+
+  const handleDevPopulate = useCallback(() => {
+    const today = new Date()
+    const colors: Array<'indigo' | 'emerald' | 'amber' | 'rose' | 'sky' | 'violet'> = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet']
+    const sampleTasks = [
+      'Rever proposta do cliente',
+      'Preparar slides da apresentação',
+      'Responder emails pendentes',
+      'Actualizar documentação da API',
+      'Corrigir bug no formulário de login',
+      'Reunião de alinhamento com equipa',
+      'Planear sprint da próxima semana',
+      'Rever pull requests',
+      'Escrever testes unitários',
+      'Pesquisar nova biblioteca de gráficos',
+      'Optimizar queries da dashboard',
+      'Desenhar wireframe do onboarding',
+      'Configurar CI/CD pipeline',
+      'Fazer deploy para staging',
+    ]
+
+    for (let d = 0; d < 7; d++) {
+      const date = format(addDays(today, d), 'yyyy-MM-dd')
+      const now = Date.now()
+
+      // 2-3 blocos por dia
+      const blockCount = 2 + Math.floor(Math.random() * 2)
+      let startMin = 480 + Math.floor(Math.random() * 60) // 8h-9h
+      for (let b = 0; b < blockCount; b++) {
+        const duration = 60 + Math.floor(Math.random() * 60) // 60-120 min
+        const endMin = startMin + duration
+        useTimeBlockStore.getState().addBlock(date, {
+          date,
+          startTime: startMin,
+          endTime: endMin,
+          title: sampleTasks[Math.floor(Math.random() * sampleTasks.length)],
+          color: colors[Math.floor(Math.random() * colors.length)]
+        })
+        startMin = endMin + 15 + Math.floor(Math.random() * 30) // gap 15-45 min
+      }
+
+      // 2-4 tarefas por dia (algumas concluídas se dia passado)
+      const taskCount = 2 + Math.floor(Math.random() * 3)
+      for (let t = 0; t < taskCount; t++) {
+        const text = sampleTasks[(d * 3 + t) % sampleTasks.length]
+        const completed = d < 0 ? Math.random() > 0.3 : false // dias passados: 70% concluídas
+        const task = {
+          id: crypto.randomUUID(),
+          text,
+          completed,
+          completedAt: completed ? now : undefined,
+          subtasks: [],
+          date,
+          createdAt: now + t
+        }
+        useTaskStore.setState((state) => ({
+          tasks: {
+            ...state.tasks,
+            [date]: [...(state.tasks[date] || []), task]
+          }
+        }))
+      }
+    }
+  }, [])
 
   return (
     <div className="h-full flex flex-col bg-bg-primary">
@@ -512,6 +587,75 @@ export default function SettingsView() {
               </div>
             ))}
           </div>
+
+          {/* Dev Section — only in dev mode */}
+          {isDev && (
+            <>
+              <hr className="border-border my-8" />
+              <h3 className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <FlaskConical size={12} />
+                Desenvolvimento
+              </h3>
+
+              <section className="mb-0 space-y-3">
+                <p className="text-xs text-text-muted">Ferramentas de desenvolvimento — só visíveis em modo dev</p>
+
+                <div className="flex gap-2">
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleDevClean}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 text-sm font-medium hover:bg-red-500/20 transition-colors"
+                  >
+                    <Eraser size={14} />
+                    Clean
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleDevPopulate}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 text-sm font-medium hover:bg-emerald-500/20 transition-colors"
+                  >
+                    <Boxes size={14} />
+                    Populate
+                  </motion.button>
+                </div>
+
+                {/* Dev calendar override */}
+                {gcalConnected && gcalCalendars.length > 1 && (
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-text-secondary mb-2">Calendário de sync (dev override)</label>
+                    <p className="text-xs text-text-muted mb-2">
+                      Escolhe um calendário diferente do principal para não misturar dados de dev com produção
+                    </p>
+                    <div className="space-y-1.5">
+                      {gcalCalendars.map((cal) => (
+                        <button
+                          key={cal.id}
+                          onClick={() => setSelectedCalendar(cal.id)}
+                          className={`w-full flex items-center gap-3 rounded-lg px-4 py-2.5 text-left border transition-colors ${
+                            selectedCalendarId === cal.id
+                              ? 'bg-amber-500/10 border-amber-500/30'
+                              : 'bg-bg-secondary border-border hover:border-border-light'
+                          }`}
+                        >
+                          <div
+                            className="w-3 h-3 rounded-full shrink-0"
+                            style={{ backgroundColor: cal.backgroundColor }}
+                          />
+                          <span className="text-sm text-text-primary truncate">{cal.summary}</span>
+                          {cal.primary && <span className="text-[10px] text-text-muted">(principal)</span>}
+                          {selectedCalendarId === cal.id && (
+                            <Check size={14} className="ml-auto text-amber-600 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
 
           {/* Footer */}
           <p className="text-xs text-text-muted mt-8 pb-4">

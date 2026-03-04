@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Move, Copy, Plus } from 'lucide-react'
+import { Sparkles, X, Loader2, Plus, CalendarClock, Link2 } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
+import { pt } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore, type Task } from '../stores/taskStore'
-import { useClipboardStore } from '../stores/clipboardStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { expandTaskV2 } from '../services/expansionPipeline'
+import DeferTaskModal from './DeferTaskModal'
 
 interface EditableTaskRowProps {
   task: Task
@@ -26,6 +28,9 @@ interface EditableTaskRowProps {
   onBlurCleanup?: (taskId: string, text: string) => void
   onIndent?: () => void
   onAddSubtask?: () => void
+  isLinked?: boolean
+  onUnlink?: () => void
+  onBreakOut?: (subtaskId: string) => void
 }
 
 export default function EditableTaskRow({
@@ -47,17 +52,17 @@ export default function EditableTaskRow({
   onSubtaskArrowDown,
   onBlurCleanup,
   onIndent,
-  onAddSubtask
+  onAddSubtask,
+  isLinked,
+  onUnlink,
+  onBreakOut
 }: EditableTaskRowProps) {
   const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
-  const clipboardTaskId = useClipboardStore((s) => s.taskId)
-  const clipboardMode = useClipboardStore((s) => s.mode)
-  const setClipboard = useClipboardStore((s) => s.setClipboard)
-  const isInClipboard = clipboardTaskId === task.id
   const [hovered, setHovered] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [localText, setLocalText] = useState(task.text)
+  const [deferModalOpen, setDeferModalOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -73,6 +78,10 @@ export default function EditableTaskRow({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault()
+      if (localText === '' && depth > 0 && onBreakOut) {
+        onBreakOut(task.id)
+        return
+      }
       updateTaskText(date, task.id, localText)
       onCreateBelow()
     } else if (e.key === 'Backspace' && localText === '') {
@@ -123,6 +132,7 @@ export default function EditableTaskRow({
     }
   }
 
+  const isInsideBlock = date.includes('__block__')
   const iconSize = depth > 0 ? 14 : 16
   const completedCount = task.subtasks.filter(s => s.completed).length
   const hasSubtasks = task.subtasks.length > 0
@@ -139,7 +149,7 @@ export default function EditableTaskRow({
       layout
     >
       <div
-        className={`task-row group flex items-center gap-3 py-2.5${isInClipboard && clipboardMode === 'move' ? ' opacity-40' : ''}${isInClipboard && clipboardMode === 'copy' ? ' border-l-2 border-dashed border-ai' : ''}`}
+        className="task-row group flex items-center gap-3 py-2.5"
         style={{ paddingLeft: `${depth * 24 + 8}px`, paddingRight: '8px' }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -186,6 +196,10 @@ export default function EditableTaskRow({
           </span>
         )}
 
+        {isLinked && depth === 0 && (
+          <Link2 size={10} className="shrink-0 text-text-muted/40" aria-hidden="true" />
+        )}
+
         <input
           ref={inputRef}
           type="text"
@@ -202,26 +216,17 @@ export default function EditableTaskRow({
         />
 
         <div className={`flex items-center gap-0.5 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'} group-focus-within:opacity-100`}>
-          {depth === 0 && !isInClipboard && (
-            <>
-              <button
-                onClick={() => setClipboard(task, date, 'move')}
-                aria-label="Mover tarefa"
-                className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
-              >
-                <Move size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
-              </button>
-              <button
-                onClick={() => setClipboard(task, date, 'copy')}
-                aria-label="Copiar tarefa"
-                className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
-              >
-                <Copy size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
-              </button>
-            </>
+          {depth === 0 && !task.completed && !isLinked && !isInsideBlock && (
+            <button
+              onClick={() => setDeferModalOpen(true)}
+              aria-label="Adiar tarefa"
+              className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
+            >
+              <CalendarClock size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
+            </button>
           )}
 
-          {onAddSubtask && (
+          {onAddSubtask && !isInsideBlock && (
             <button
               onClick={onAddSubtask}
               aria-label="Adicionar subtarefa"
@@ -245,8 +250,8 @@ export default function EditableTaskRow({
           </button>
 
           <button
-            onClick={() => removeTask(date, task.id)}
-            aria-label="Eliminar tarefa"
+            onClick={() => onUnlink ? onUnlink() : removeTask(date, task.id)}
+            aria-label={onUnlink ? "Desassociar tarefa" : "Eliminar tarefa"}
             className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
           >
             <X size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
@@ -297,10 +302,18 @@ export default function EditableTaskRow({
               onSubtaskArrowUp={onSubtaskArrowUp}
               onSubtaskArrowDown={onSubtaskArrowDown}
               onBlurCleanup={onBlurCleanup}
+              onBreakOut={onBreakOut}
             />
           ))}
         </AnimatePresence>
       </div>
+
+      <DeferTaskModal
+        isOpen={deferModalOpen}
+        onClose={() => setDeferModalOpen(false)}
+        taskId={task.id}
+        originDate={date}
+      />
     </motion.div>
   )
 }
