@@ -313,6 +313,7 @@ function TaskItem({ entry, navigate, showCompleted }: {
 }) {
   const { task, dateKey, baseDate, blockId, blockTitle } = entry
   const toggleTask = useTaskStore((s) => s.toggleTask)
+  const removeTask = useTaskStore((s) => s.removeTask)
   const sub = countSubtaskStats(task.subtasks)
   const visibleSubtasks = showCompleted ? task.subtasks : task.subtasks.filter((s) => !s.completed)
 
@@ -365,6 +366,14 @@ function TaskItem({ entry, navigate, showCompleted }: {
           className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         >
           <Calendar size={12} className="text-text-muted" />
+        </button>
+
+        <button
+          onClick={() => removeTask(dateKey, task.id)}
+          aria-label="Eliminar tarefa"
+          className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <X size={14} className="text-text-muted hover:text-text-secondary transition-colors" />
         </button>
       </div>
 

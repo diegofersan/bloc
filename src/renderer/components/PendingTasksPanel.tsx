@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -14,6 +14,7 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
   const tasks = useTaskStore((s) => s.tasks)
   const taskRefs = useTaskStore((s) => s.taskRefs)
   const createTaskRef = useTaskStore((s) => s.createTaskRef)
+  const removeTask = useTaskStore((s) => s.removeTask)
 
   const grouped = useMemo(() => {
     // Gather all pending tasks across dates (with subtask info)
@@ -106,6 +107,7 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
                     text={item.task.text}
                     subtasks={item.task.subtasks}
                     onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
+                    onDelete={() => removeTask(item.date, item.task.id)}
                   />
                 ))}
               </AnimatePresence>
@@ -117,10 +119,11 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
   )
 }
 
-function PendingTaskRow({ text, subtasks, onLink }: {
+function PendingTaskRow({ text, subtasks, onLink, onDelete }: {
   text: string
   subtasks: Array<{ id: string; text: string; completed: boolean }>
   onLink: () => void
+  onDelete: () => void
 }) {
   return (
     <motion.div
@@ -144,6 +147,15 @@ function PendingTaskRow({ text, subtasks, onLink }: {
           className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
         >
           <Plus size={14} className="text-accent" />
+        </button>
+
+        {/* Delete button */}
+        <button
+          onClick={onDelete}
+          aria-label="Eliminar tarefa"
+          className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          <X size={14} className="text-text-muted hover:text-text-secondary transition-colors" />
         </button>
       </div>
 
