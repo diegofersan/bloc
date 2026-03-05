@@ -18,12 +18,12 @@ interface EditableTaskRowProps {
   isFocused: boolean
   activeTaskId?: string | null
   onFocus: () => void
-  onCreateBelow: () => void
+  onCreateBelow: (text?: string) => void
   onDeleteAndFocusAbove: () => void
   onArrowUp: () => void
   onArrowDown: () => void
   onSubtaskFocus?: (id: string) => void
-  onSubtaskCreateBelow?: (id: string) => void
+  onSubtaskCreateBelow?: (id: string, text?: string) => void
   onSubtaskDeleteAndFocusAbove?: (id: string) => void
   onSubtaskArrowUp?: (id: string) => void
   onSubtaskArrowDown?: (id: string) => void
@@ -36,6 +36,7 @@ interface EditableTaskRowProps {
   isLinked?: boolean
   onUnlink?: () => void
   onBreakOut?: (subtaskId: string) => void
+  onPasteMultiLine?: (lines: string[]) => void
 }
 
 export default function EditableTaskRow({
@@ -63,7 +64,8 @@ export default function EditableTaskRow({
   onSubtaskUnindent,
   isLinked,
   onUnlink,
-  onBreakOut
+  onBreakOut,
+  onPasteMultiLine
 }: EditableTaskRowProps) {
   const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
@@ -92,8 +94,17 @@ export default function EditableTaskRow({
       }
       if (localText === '' && depth === 0) return
       if (localText === '' && task.subtasks.length > 0) return
-      updateTaskText(date, task.id, localText)
-      onCreateBelow()
+      const cursorPos = e.currentTarget.selectionStart ?? localText.length
+      if (cursorPos < localText.length) {
+        const leftPart = localText.substring(0, cursorPos)
+        const rightPart = localText.substring(cursorPos).trim()
+        setLocalText(leftPart)
+        updateTaskText(date, task.id, leftPart)
+        onCreateBelow(rightPart)
+      } else {
+        updateTaskText(date, task.id, localText)
+        onCreateBelow()
+      }
     } else if (e.key === 'Backspace' && localText === '') {
       e.preventDefault()
       if (task.subtasks.length > 0) return
@@ -130,6 +141,15 @@ export default function EditableTaskRow({
       updateTaskText(date, task.id, localText)
     }
     onBlurCleanup?.(task.id, localText)
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    const text = e.clipboardData.getData('text/plain')
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
+    if (lines.length > 1 && onPasteMultiLine) {
+      e.preventDefault()
+      onPasteMultiLine(lines)
+    }
   }
 
   async function handleExpand() {
@@ -227,6 +247,7 @@ export default function EditableTaskRow({
           value={localText}
           onChange={(e) => setLocalText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={onFocus}
           onBlur={handleBlur}
           aria-label="Editar tarefa"
@@ -313,7 +334,7 @@ export default function EditableTaskRow({
               isFocused={activeTaskId === subtask.id}
               activeTaskId={activeTaskId}
               onFocus={() => onSubtaskFocus?.(subtask.id)}
-              onCreateBelow={() => onSubtaskCreateBelow?.(subtask.id)}
+              onCreateBelow={(text?: string) => onSubtaskCreateBelow?.(subtask.id, text)}
               onDeleteAndFocusAbove={() => onSubtaskDeleteAndFocusAbove?.(subtask.id)}
               onArrowUp={() => onSubtaskArrowUp?.(subtask.id)}
               onArrowDown={() => onSubtaskArrowDown?.(subtask.id)}
@@ -328,6 +349,7 @@ export default function EditableTaskRow({
               onSubtaskAddSubtask={onSubtaskAddSubtask}
               onUnindent={() => onSubtaskUnindent?.(subtask.id)}
               onSubtaskUnindent={onSubtaskUnindent}
+              onPasteMultiLine={onPasteMultiLine}
             />
           ))}
         </AnimatePresence>
