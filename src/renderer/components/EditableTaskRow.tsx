@@ -8,6 +8,8 @@ import { useSettingsStore } from '../stores/settingsStore'
 import { expandTaskV2 } from '../services/expansionPipeline'
 import DeferTaskModal from './DeferTaskModal'
 
+const MAX_DEPTH = 2
+
 interface EditableTaskRowProps {
   task: Task
   date: string
@@ -28,6 +30,9 @@ interface EditableTaskRowProps {
   onBlurCleanup?: (taskId: string, text: string) => void
   onIndent?: () => void
   onAddSubtask?: () => void
+  onSubtaskAddSubtask?: (id: string) => void
+  onUnindent?: () => void
+  onSubtaskUnindent?: (id: string) => void
   isLinked?: boolean
   onUnlink?: () => void
   onBreakOut?: (subtaskId: string) => void
@@ -53,6 +58,9 @@ export default function EditableTaskRow({
   onBlurCleanup,
   onIndent,
   onAddSubtask,
+  onSubtaskAddSubtask,
+  onUnindent,
+  onSubtaskUnindent,
   isLinked,
   onUnlink,
   onBreakOut
@@ -78,14 +86,17 @@ export default function EditableTaskRow({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (localText === '' && depth > 0 && onBreakOut) {
+      if (localText === '' && depth > 0 && task.subtasks.length === 0 && onBreakOut) {
         onBreakOut(task.id)
         return
       }
+      if (localText === '' && depth === 0) return
+      if (localText === '' && task.subtasks.length > 0) return
       updateTaskText(date, task.id, localText)
       onCreateBelow()
     } else if (e.key === 'Backspace' && localText === '') {
       e.preventDefault()
+      if (task.subtasks.length > 0) return
       onDeleteAndFocusAbove()
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
@@ -93,11 +104,21 @@ export default function EditableTaskRow({
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       onArrowDown()
+    } else if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault()
+      if (depth > 0) {
+        if (localText.trim() === '') {
+          onDeleteAndFocusAbove()
+        } else if (onUnindent) {
+          updateTaskText(date, task.id, localText)
+          onUnindent()
+        }
+      }
     } else if (e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault()
-      if (onIndent) {
+      if (localText.trim() !== '' && onAddSubtask && depth < MAX_DEPTH) {
         updateTaskText(date, task.id, localText)
-        onIndent()
+        onAddSubtask()
       }
     } else if (e.key === 'Escape') {
       inputRef.current?.blur()
@@ -226,7 +247,7 @@ export default function EditableTaskRow({
             </button>
           )}
 
-          {onAddSubtask && !isInsideBlock && (
+          {onAddSubtask && !isInsideBlock && depth < MAX_DEPTH && (
             <button
               onClick={onAddSubtask}
               aria-label="Adicionar subtarefa"
@@ -303,6 +324,10 @@ export default function EditableTaskRow({
               onSubtaskArrowDown={onSubtaskArrowDown}
               onBlurCleanup={onBlurCleanup}
               onBreakOut={onBreakOut}
+              onAddSubtask={depth + 1 < MAX_DEPTH ? () => onSubtaskAddSubtask?.(subtask.id) : undefined}
+              onSubtaskAddSubtask={onSubtaskAddSubtask}
+              onUnindent={() => onSubtaskUnindent?.(subtask.id)}
+              onSubtaskUnindent={onSubtaskUnindent}
             />
           ))}
         </AnimatePresence>

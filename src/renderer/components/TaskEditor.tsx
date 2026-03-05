@@ -34,7 +34,7 @@ function findParentId(tasks: Task[], targetId: string): string | null {
 }
 
 export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
-  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask, getResolvedTask, removeTaskRef } = useTaskStore()
+  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask, unindentTask, getResolvedTask, removeTaskRef } = useTaskStore()
   const EMPTY_REFS: import('../stores/taskStore').TaskRef[] = useMemo(() => [], [])
   // For composite keys (date__block__id), also show refs from the base date
   const baseDate = useMemo(() => {
@@ -174,6 +174,35 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
     [date, addManualSubtask]
   )
 
+  const handleBreakOut = useCallback(
+    (subtaskId: string) => {
+      const parentId = findParentId(tasks, subtaskId)
+      if (!parentId) return
+
+      removeSubtask(date, parentId, subtaskId)
+
+      const grandparentId = findParentId(tasks, parentId)
+      if (grandparentId) {
+        const newId = insertSubtaskAfter(date, grandparentId, parentId, '')
+        requestAnimationFrame(() => setActiveTaskId(newId))
+      } else {
+        const newId = insertTaskAfter(date, parentId, '')
+        requestAnimationFrame(() => setActiveTaskId(newId))
+      }
+    },
+    [date, tasks, removeSubtask, insertSubtaskAfter, insertTaskAfter]
+  )
+
+  const handleUnindent = useCallback(
+    (taskId: string) => {
+      const success = unindentTask(date, taskId)
+      if (success) {
+        requestAnimationFrame(() => setActiveTaskId(taskId))
+      }
+    },
+    [date, unindentTask]
+  )
+
   const handleBlurCleanup = useCallback(
     (taskId: string, text: string) => {
       if (text.trim() === '') {
@@ -248,6 +277,10 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                   onBlurCleanup={handleBlurCleanup}
                   onIndent={i > 0 ? () => handleIndent(task.id) : undefined}
                   onAddSubtask={() => handleAddSubtask(task.id)}
+                  onSubtaskAddSubtask={(id) => handleAddSubtask(id)}
+                  onUnindent={undefined}
+                  onSubtaskUnindent={(id) => handleUnindent(id)}
+                  onBreakOut={handleBreakOut}
                 />
               ))}
             </AnimatePresence>
@@ -290,8 +323,15 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                   const newId = addManualSubtask(ref.originDate, linkedTask.id)
                   requestAnimationFrame(() => setActiveTaskId(newId))
                 }}
+                onSubtaskAddSubtask={(id) => {
+                  const newId = addManualSubtask(ref.originDate, id)
+                  requestAnimationFrame(() => setActiveTaskId(newId))
+                }}
+                onSubtaskUnindent={(id) => {
+                  const success = unindentTask(ref.originDate, id)
+                  if (success) requestAnimationFrame(() => setActiveTaskId(id))
+                }}
                 onBreakOut={(subtaskId) => {
-                  // Delete empty subtask from linked task, create new parent task in current block
                   removeSubtask(ref.originDate, linkedTask.id, subtaskId)
                   addTask(date, '')
                   requestAnimationFrame(() => {

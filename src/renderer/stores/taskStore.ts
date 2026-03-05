@@ -78,6 +78,7 @@ interface TaskState {
   toggleTaskRef: (refDate: string, refId: string) => void
   removeTaskRef: (refDate: string, refId: string) => void
   getResolvedTask: (ref: TaskRef) => Task | null
+  unindentTask: (date: string, subtaskId: string) => boolean
   getPendingTasksAcrossDates: () => Array<{ task: Task; date: string }>
 }
 
@@ -205,6 +206,21 @@ function removeSubtaskFromParent(tasks: Task[], parentId: string, subtaskId: str
     }
     return task
   })
+}
+
+function findParentChain(tasks: Task[], targetId: string, chain: string[] = []): { parentId: string; grandparentId: string | null } | null {
+  for (const task of tasks) {
+    for (const sub of task.subtasks) {
+      if (sub.id === targetId) {
+        return { parentId: task.id, grandparentId: chain.length > 0 ? chain[chain.length - 1] : null }
+      }
+    }
+    if (task.subtasks.length > 0) {
+      const found = findParentChain(task.subtasks, targetId, [...chain, task.id])
+      if (found) return found
+    }
+  }
+  return null
 }
 
 function updateTaskInList(tasks: Task[], taskId: string, updater: (task: Task) => Task): Task[] {
@@ -534,6 +550,33 @@ export const useTaskStore = create<TaskState>()(
             }
           }
         })
+      },
+
+      unindentTask: (date, subtaskId) => {
+        const state = get()
+        const dateTasks = state.tasks[date]
+        if (!dateTasks) return false
+
+        const result = findParentChain(dateTasks, subtaskId)
+        if (!result) return false
+
+        const { parentId, grandparentId } = result
+        const subtask = findTaskInList(dateTasks, subtaskId)
+        if (!subtask) return false
+
+        let updated = removeSubtaskFromParent(dateTasks, parentId, subtaskId)
+
+        if (grandparentId === null) {
+          const parentIndex = updated.findIndex((t) => t.id === parentId)
+          if (parentIndex === -1) return false
+          updated = [...updated]
+          updated.splice(parentIndex + 1, 0, subtask)
+        } else {
+          updated = insertSubtaskAfterInList(updated, grandparentId, parentId, subtask)
+        }
+
+        set({ tasks: { ...state.tasks, [date]: updated } })
+        return true
       },
 
       getTasksForDate: (date) => {

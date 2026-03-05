@@ -34,7 +34,6 @@ export const useSettingsStore = create<SettingsState>()(
       primaryTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       secondaryTimezone: null,
       githubToken: '',
-
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },

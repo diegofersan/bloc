@@ -349,32 +349,33 @@ export default function SettingsView() {
             </div>
           </section>
 
+          {/* Block sites during Pomodoro toggle */}
+          <div className="flex items-center justify-between mt-4">
+            <div>
+              <label className="text-sm font-medium text-text-secondary">Bloquear sites durante Pomodoro</label>
+              <p className="text-xs text-text-muted mt-0.5">Bloqueia sites distractivos durante todo o ciclo</p>
+            </div>
+            <button
+              onClick={() => setBlockDuringPomodoro(!blockDuringPomodoro)}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                blockDuringPomodoro ? 'bg-accent' : 'bg-bg-tertiary'
+              }`}
+            >
+              <motion.div
+                className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                animate={{ x: blockDuringPomodoro ? 16 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </button>
+          </div>
+
+
           <hr className="border-border my-8" />
 
           {/* Site Blocker Section */}
           <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">Bloqueio de Sites</h3>
 
           <section className="mb-0">
-            {/* Toggle */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <label className="text-sm font-medium text-text-secondary">Bloquear durante Pomodoro</label>
-                <p className="text-xs text-text-muted mt-0.5">Bloqueia sites distractivos durante sessões de foco</p>
-              </div>
-              <button
-                onClick={() => setBlockDuringPomodoro(!blockDuringPomodoro)}
-                className={`relative w-10 h-6 rounded-full transition-colors ${
-                  blockDuringPomodoro ? 'bg-accent' : 'bg-bg-tertiary'
-                }`}
-              >
-                <motion.div
-                  className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
-                  animate={{ x: blockDuringPomodoro ? 16 : 0 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                />
-              </button>
-            </div>
-
             {/* Add site input */}
             <div className="flex gap-2 mb-3">
               <input

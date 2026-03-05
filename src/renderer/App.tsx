@@ -241,13 +241,13 @@ export default function App() {
     if (!blockDuringPomodoro || blockedSites.length === 0) return
 
     async function handleStatusChange() {
-      // Starting work: enable blocking
       if (pomodoroStatus === 'working' && prev !== 'working') {
         const ok = await window.bloc?.siteBlocker.enable(blockedSites)
         if (ok) setIsBlocking(true)
       }
-      // Leaving work (break or idle): disable blocking
-      if (pomodoroStatus !== 'working' && prev === 'working') {
+
+      // Keep blocking during break — only disable at idle
+      if (pomodoroStatus === 'idle' && prev !== 'idle') {
         const ok = await window.bloc?.siteBlocker.disable()
         if (ok) setIsBlocking(false)
       }
