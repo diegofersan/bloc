@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo } from 'react'
-import { ClipboardPaste, ListPlus } from 'lucide-react'
+import { ClipboardPaste } from 'lucide-react'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import { useClipboardStore } from '../stores/clipboardStore'
 import { AnimatePresence } from 'framer-motion'
@@ -34,7 +34,7 @@ function findParentId(tasks: Task[], targetId: string): string | null {
 }
 
 export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
-  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, addSubtasks, indentTaskAsSubtask, unindentTask, getResolvedTask, removeTaskRef } = useTaskStore()
+  const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask, unindentTask, getResolvedTask, removeTaskRef } = useTaskStore()
   const EMPTY_REFS: import('../stores/taskStore').TaskRef[] = useMemo(() => [], [])
   // For composite keys (date__block__id), also show refs from the base date
   const baseDate = useMemo(() => {
@@ -67,7 +67,6 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
   const clipboardMode = useClipboardStore((s) => s.mode)
   const clearClipboard = useClipboardStore((s) => s.clearClipboard)
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null)
-  const [pasteModal, setPasteModal] = useState<{ taskId: string; lines: string[] } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const showPaste = clipboardTask && clipboardMode && clipboardFromKey !== date
@@ -217,19 +216,6 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
     [date, tasks, removeTask]
   )
 
-  const handlePasteMultiLine = useCallback(
-    (taskId: string, lines: string[]) => {
-      setPasteModal({ taskId, lines })
-    },
-    []
-  )
-
-  const confirmPasteAsSubtasks = useCallback(() => {
-    if (!pasteModal) return
-    addSubtasks(date, pasteModal.taskId, pasteModal.lines)
-    setPasteModal(null)
-  }, [date, pasteModal, addSubtasks])
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="shrink-0 pl-5 pr-5 pt-4 pb-3">
@@ -295,7 +281,6 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                   onUnindent={undefined}
                   onSubtaskUnindent={(id) => handleUnindent(id)}
                   onBreakOut={handleBreakOut}
-                  onPasteMultiLine={(lines) => handlePasteMultiLine(task.id, lines)}
                 />
               ))}
             </AnimatePresence>
@@ -355,7 +340,6 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                     if (last) setActiveTaskId(last.id)
                   })
                 }}
-                onPasteMultiLine={(lines) => handlePasteMultiLine(linkedTask.id, lines)}
               />
             ))}
 
@@ -369,41 +353,6 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
         )}
       </div>
 
-      {pasteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setPasteModal(null)}>
-          <div className="bg-bg-primary border border-border rounded-xl shadow-lg w-80 max-h-[60vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 px-4 pt-4 pb-2">
-              <ListPlus size={16} className="text-text-secondary shrink-0" />
-              <h3 className="text-sm font-medium text-text-primary">
-                Criar {pasteModal.lines.length} subtarefas?
-              </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              <ul className="space-y-1">
-                {pasteModal.lines.map((line, i) => (
-                  <li key={i} className="text-xs text-text-secondary truncate">
-                    • {line}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex gap-2 px-4 py-3 border-t border-border">
-              <button
-                onClick={() => setPasteModal(null)}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-secondary transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmPasteAsSubtasks}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
-              >
-                Criar subtarefas
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Plus, CalendarClock, Link2 } from 'lucide-react'
+import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -9,6 +9,28 @@ import { expandTaskV2 } from '../services/expansionPipeline'
 import DeferTaskModal from './DeferTaskModal'
 
 const MAX_DEPTH = 2
+
+/** Strip common list prefixes: "1. ", "1) ", "- ", "* ", "• ", "[ ] ", "[x] " */
+function stripListPrefix(line: string): string {
+  return line.replace(/^(\d+[\.\)]\s+|[-•\*]\s+|\[[ xX]\]\s+)/, '').trim()
+}
+
+/** Detect list items from pasted text — tries newlines, numbered, then bullet patterns */
+function detectListItems(text: string): string[] | null {
+  // 1. Split by newlines (handles \n, \r\n, \r)
+  const byNewline = text.split(/\r?\n|\r/).map(l => l.trim()).filter(l => l.length > 0)
+  if (byNewline.length > 1) return byNewline.map(stripListPrefix).filter(l => l.length > 0)
+
+  // 2. Numbered list on single line: "1. foo 2. bar 3. baz"
+  const numbered = text.split(/(?=\d+[\.\)]\s)/).map(l => l.trim()).filter(l => l.length > 0)
+  if (numbered.length > 1) return numbered.map(stripListPrefix).filter(l => l.length > 0)
+
+  // 3. Bullet list on single line: "- foo - bar" or "• foo • bar"
+  const bulleted = text.split(/(?=[-•\*]\s)/).map(l => l.trim()).filter(l => l.length > 0)
+  if (bulleted.length > 1) return bulleted.map(stripListPrefix).filter(l => l.length > 0)
+
+  return null
+}
 
 interface EditableTaskRowProps {
   task: Task
@@ -36,7 +58,6 @@ interface EditableTaskRowProps {
   isLinked?: boolean
   onUnlink?: () => void
   onBreakOut?: (subtaskId: string) => void
-  onPasteMultiLine?: (lines: string[]) => void
 }
 
 export default function EditableTaskRow({
@@ -64,8 +85,7 @@ export default function EditableTaskRow({
   onSubtaskUnindent,
   isLinked,
   onUnlink,
-  onBreakOut,
-  onPasteMultiLine
+  onBreakOut
 }: EditableTaskRowProps) {
   const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
@@ -73,6 +93,7 @@ export default function EditableTaskRow({
   const [error, setError] = useState<string | null>(null)
   const [localText, setLocalText] = useState(task.text)
   const [deferModalOpen, setDeferModalOpen] = useState(false)
+  const [pasteLines, setPasteLines] = useState<string[] | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -145,11 +166,25 @@ export default function EditableTaskRow({
 
   function handlePaste(e: React.ClipboardEvent<HTMLInputElement>) {
     const text = e.clipboardData.getData('text/plain')
-    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0)
-    if (lines.length > 1 && onPasteMultiLine) {
+    const items = detectListItems(text)
+    if (items && items.length > 1) {
       e.preventDefault()
-      onPasteMultiLine(lines)
+      setPasteLines(items)
     }
+  }
+
+  function handleConfirmPaste() {
+    if (!pasteLines) return
+    addSubtasks(date, task.id, pasteLines)
+    setPasteLines(null)
+  }
+
+  function handleCancelPaste() {
+    if (!pasteLines) return
+    const joined = pasteLines.join(' ')
+    setLocalText(joined)
+    updateTaskText(date, task.id, joined)
+    setPasteLines(null)
   }
 
   async function handleExpand() {
@@ -349,7 +384,6 @@ export default function EditableTaskRow({
               onSubtaskAddSubtask={onSubtaskAddSubtask}
               onUnindent={() => onSubtaskUnindent?.(subtask.id)}
               onSubtaskUnindent={onSubtaskUnindent}
-              onPasteMultiLine={onPasteMultiLine}
             />
           ))}
         </AnimatePresence>
@@ -361,6 +395,42 @@ export default function EditableTaskRow({
         taskId={task.id}
         originDate={date}
       />
+
+      {pasteLines && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={handleCancelPaste}>
+          <div className="bg-bg-primary border border-border rounded-xl shadow-lg w-80 max-h-[60vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+              <ListPlus size={16} className="text-text-secondary shrink-0" />
+              <h3 className="text-sm font-medium text-text-primary">
+                Criar {pasteLines.length} subtarefas?
+              </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-2">
+              <ul className="space-y-1">
+                {pasteLines.map((line, i) => (
+                  <li key={i} className="text-xs text-text-secondary truncate">
+                    • {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex gap-2 px-4 py-3 border-t border-border">
+              <button
+                onClick={handleCancelPaste}
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-secondary transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmPaste}
+                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
+              >
+                Criar subtarefas
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   )
 }
