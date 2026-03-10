@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { motion } from 'framer-motion'
 import { ChevronUp, ChevronDown, Maximize2 } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, parseISO, isToday } from 'date-fns'
+import { pt } from 'date-fns/locale'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import { useTaskStore, type Distraction } from '../stores/taskStore'
@@ -55,15 +57,24 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
   const distractionInputRef = useRef<HTMLInputElement>(null)
 
   // Pomodoro state (read-only for display, controls via PomodoroTimerCore)
-  const pomodoroDate = usePomodoroStore((s) => s.pomodoroDate)
+  const stealthyBlockId = usePomodoroStore((s) => s.stealthyBlockId)
+  const stealthyDate = usePomodoroStore((s) => s.stealthyDate)
 
-  // Blocks for pomodoro date (or today)
-  const activeDate = pomodoroDate || format(new Date(), 'yyyy-MM-dd')
+  // Active date: stealthyDate (captured on entry) > today fallback
+  const activeDate = stealthyDate || format(new Date(), 'yyyy-MM-dd')
+  const dateLabel = useMemo(() => {
+    const parsed = parseISO(activeDate)
+    return isToday(parsed) ? 'Hoje' : format(parsed, "EEE, d MMM", { locale: pt })
+  }, [activeDate])
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const blocks = useMemo(() => allBlocks[activeDate] || [], [allBlocks, activeDate])
 
-  // Tasks for current block
-  const currentBlock = useMemo(() => getCurrentBlock(blocks), [blocks])
+  // Use pinned block (from TimelineView) or fall back to time-based detection
+  const pinnedBlock = useMemo(() => {
+    if (!stealthyBlockId) return null
+    return blocks.find((b) => b.id === stealthyBlockId) || null
+  }, [stealthyBlockId, blocks])
+  const currentBlock = useMemo(() => pinnedBlock || getCurrentBlock(blocks), [pinnedBlock, blocks])
   const nextBlock = useMemo(() => getNextBlock(blocks), [blocks])
   const blockTaskKey = currentBlock ? `${activeDate}__block__${currentBlock.id}` : activeDate
   const allTasks = useTaskStore((s) => s.tasks)
@@ -100,7 +111,12 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
   // --- COLLAPSED PLAYER VIEW ---
   if (collapsed) {
     return (
-      <div className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.15 }}
+        className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
+      >
         {/* Row 1: PomodoroTimer + task + expand */}
         <div className="titlebar-drag flex items-center gap-2 px-3 pt-2 pb-1">
           <div className="shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -132,16 +148,21 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
             spellCheck={false}
           />
         </div>
-      </div>
+      </motion.div>
     )
   }
 
   // --- EXPANDED VIEW ---
   return (
-    <div className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15 }}
+      className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
+    >
       {/* Drag handle + controls */}
       <div className="titlebar-drag shrink-0 flex items-center justify-between px-3 pt-2 pb-1">
-        <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">Stealthy</span>
+        <span className="text-[10px] font-medium text-text-muted tracking-wider capitalize">{dateLabel}</span>
         <div className="flex items-center gap-0.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button onClick={() => setCollapsed(true)} className="p-1 rounded hover:bg-bg-hover transition-colors" aria-label="Colapsar">
             <ChevronUp size={12} className="text-text-muted" />
@@ -219,6 +240,6 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   )
 }

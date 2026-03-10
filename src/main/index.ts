@@ -181,6 +181,26 @@ rm -rf "$TEMP_DIR"
       tray.setTitle(data.time ?? '')
     })
 
+    // Animate opacity from current to target over duration (ms)
+    function animateOpacity(win: BrowserWindow, from: number, to: number, duration: number): void {
+      const steps = 12
+      const stepMs = duration / steps
+      const delta = (to - from) / steps
+      let step = 0
+      const timer = setInterval(() => {
+        step++
+        if (step >= steps) {
+          win.setOpacity(to)
+          clearInterval(timer)
+        } else {
+          // ease-out quad: decelerating curve
+          const t = step / steps
+          const eased = t * (2 - t)
+          win.setOpacity(from + (to - from) * eased)
+        }
+      }, stepMs)
+    }
+
     // Stealthy mode IPC handlers
     ipcMain.handle('stealthy:enter', (_event, opts: { width: number; height: number }) => {
       if (!mainWindow || isStealthy) return
@@ -192,17 +212,26 @@ rm -rf "$TEMP_DIR"
       const x = display.workArea.x + screenW - opts.width - 16
       const y = display.workArea.y + screenH - opts.height - 16
 
-      mainWindow.setMinimumSize(200, 80)
-      mainWindow.setBounds({ x, y, width: opts.width, height: opts.height }, true)
-      mainWindow.setAlwaysOnTop(true, 'floating')
-      mainWindow.setContentProtection(true)
-      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-      mainWindow.setBackgroundColor('#00000000')
-      mainWindow.setOpacity(0.92)
-      if (process.platform === 'darwin') {
-        mainWindow.setWindowButtonVisibility(false)
-      }
-      mainWindow.webContents.send('stealthy:changed', true)
+      // Fade out, then transform, then fade in at target opacity
+      animateOpacity(mainWindow, 1, 0.4, 150)
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return
+        mainWindow.setMinimumSize(200, 80)
+        mainWindow.setBackgroundColor('#00000000')
+        if (process.platform === 'darwin') {
+          mainWindow.setWindowButtonVisibility(false)
+        }
+        mainWindow.setBounds({ x, y, width: opts.width, height: opts.height }, true)
+        mainWindow.setAlwaysOnTop(true, 'floating')
+        mainWindow.setContentProtection(true)
+        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+        mainWindow.webContents.send('stealthy:changed', true)
+        // Fade in to stealthy opacity
+        setTimeout(() => {
+          if (!mainWindow || mainWindow.isDestroyed()) return
+          animateOpacity(mainWindow, 0.4, 0.92, 200)
+        }, 100)
+      }, 150)
     })
 
     ipcMain.handle('stealthy:exit', () => {
@@ -210,21 +239,31 @@ rm -rf "$TEMP_DIR"
       isStealthy = false
 
       const bgColor = nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#f8f7f4'
-      mainWindow.setAlwaysOnTop(false)
-      mainWindow.setContentProtection(false)
-      mainWindow.setVisibleOnAllWorkspaces(false)
-      mainWindow.setBackgroundColor(bgColor)
-      mainWindow.setOpacity(1)
-      if (process.platform === 'darwin') {
-        mainWindow.setWindowButtonVisibility(true)
-      }
-      mainWindow.setResizable(true)
-      mainWindow.setMinimumSize(420, 600)
-      if (savedBounds) {
-        mainWindow.setBounds(savedBounds, true)
-        savedBounds = null
-      }
-      mainWindow.webContents.send('stealthy:changed', false)
+
+      // Fade out stealthy, then restore, then fade in
+      animateOpacity(mainWindow, 0.92, 0.4, 150)
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return
+        mainWindow.setAlwaysOnTop(false)
+        mainWindow.setContentProtection(false)
+        mainWindow.setVisibleOnAllWorkspaces(false)
+        mainWindow.setBackgroundColor(bgColor)
+        if (process.platform === 'darwin') {
+          mainWindow.setWindowButtonVisibility(true)
+        }
+        mainWindow.setResizable(true)
+        mainWindow.setMinimumSize(420, 600)
+        if (savedBounds) {
+          mainWindow.setBounds(savedBounds, true)
+          savedBounds = null
+        }
+        mainWindow.webContents.send('stealthy:changed', false)
+        // Fade back to full opacity
+        setTimeout(() => {
+          if (!mainWindow || mainWindow.isDestroyed()) return
+          animateOpacity(mainWindow, 0.4, 1, 200)
+        }, 100)
+      }, 150)
     })
 
     ipcMain.handle('stealthy:resize', (_event, opts: { width: number; height: number; resizable?: boolean }) => {

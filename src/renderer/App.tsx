@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { format } from 'date-fns'
 import { Play } from 'lucide-react'
 import CalendarView from './views/CalendarView'
 import TimelineView from './views/TimelineView'
@@ -179,16 +180,33 @@ export default function App() {
 
   const toggleCapture = useCallback(() => setShowCapture((v) => !v), [])
 
-  // Stealthy mode
+  // Stealthy mode — centralized enter/exit helpers
+  const captureStealthyContext = useCallback(() => {
+    const hash = window.location.hash || ''
+    const match = hash.match(/#\/day\/(\d{4}-\d{2}-\d{2})/)
+    const viewDate = match ? match[1] : null
+    const store = usePomodoroStore.getState()
+    // Priority: viewing date > pomodoro date > today
+    store.setStealthyDate(viewDate || store.pomodoroDate || format(new Date(), 'yyyy-MM-dd'))
+  }, [])
+
+  const clearStealthyContext = useCallback(() => {
+    const store = usePomodoroStore.getState()
+    store.setStealthyBlockId(null)
+    store.setStealthyDate(null)
+  }, [])
+
   const enterStealthy = useCallback(() => {
+    captureStealthyContext()
     setStealthyMode(true)
     window.bloc?.stealthy.enter({ width: 480, height: 540 })
-  }, [])
+  }, [captureStealthyContext])
 
   const exitStealthy = useCallback(() => {
     setStealthyMode(false)
     window.bloc?.stealthy.exit()
-  }, [])
+    clearStealthyContext()
+  }, [clearStealthyContext])
 
   // Listen for stealthy toggle from global shortcut
   useEffect(() => {
@@ -196,23 +214,27 @@ export default function App() {
       setStealthyMode((prev) => {
         if (prev) {
           window.bloc?.stealthy.exit()
+          clearStealthyContext()
           return false
         } else {
+          captureStealthyContext()
           window.bloc?.stealthy.enter({ width: 480, height: 540 })
           return true
         }
       })
     })
     return () => cleanupToggle?.()
-  }, [])
+  }, [captureStealthyContext, clearStealthyContext])
 
   // Listen for stealthy state changes from main process (e.g. button in PomodoroTimer)
   useEffect(() => {
     const cleanup = window.bloc?.stealthy.onChange((active) => {
+      if (active) captureStealthyContext()
+      else clearStealthyContext()
       setStealthyMode(active)
     })
     return () => cleanup?.()
-  }, [])
+  }, [captureStealthyContext, clearStealthyContext])
 
   // Auto-update listeners
   useEffect(() => {
@@ -344,8 +366,10 @@ export default function App() {
         setStealthyMode((prev) => {
           if (prev) {
             window.bloc?.stealthy.exit()
+            clearStealthyContext()
             return false
           } else {
+            captureStealthyContext()
             window.bloc?.stealthy.enter({ width: 480, height: 540 })
             return true
           }
@@ -354,7 +378,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [toggleCapture])
+  }, [toggleCapture, captureStealthyContext, clearStealthyContext])
 
   // Cmd+Z undo delete
   useEffect(() => {

@@ -6,6 +6,7 @@ import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import { useTaskStore } from '../stores/taskStore'
+import { usePomodoroStore } from '../stores/pomodoroStore'
 import TimelineGrid from '../components/TimelineGrid'
 import DistractionItem from '../components/DistractionItem'
 import DayView from './DayView'
@@ -144,6 +145,16 @@ export default function TimelineView() {
       setSearchParams({}, { replace: true })
     }
   }, [])
+  // Sync active block to store so StealthyView can use it
+  const setStealthyBlockId = usePomodoroStore((s) => s.setStealthyBlockId)
+  useEffect(() => {
+    if (viewMode === 'detail' && activeBlockId) {
+      setStealthyBlockId(activeBlockId)
+    } else {
+      setStealthyBlockId(null)
+    }
+  }, [viewMode, activeBlockId, setStealthyBlockId])
+
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)

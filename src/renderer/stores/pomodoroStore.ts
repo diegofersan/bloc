@@ -15,6 +15,8 @@ interface PomodoroState {
   totalSeconds: number
   startedAt: number | null
   expectedEndAt: number | null
+  stealthyBlockId: string | null
+  stealthyDate: string | null
   setWorkDuration: (minutes: number) => void
   setBreakDuration: (minutes: number) => void
   startWork: (date: string) => void
@@ -25,6 +27,8 @@ interface PomodoroState {
   resume: () => void
   autoPause: () => void
   autoResume: () => void
+  setStealthyBlockId: (id: string | null) => void
+  setStealthyDate: (date: string | null) => void
   completedPomodoros: Record<string, number>
   getCompletedForDate: (date: string) => number
   getDatesWithPomodoros: () => string[]
@@ -44,6 +48,8 @@ export const usePomodoroStore = create<PomodoroState>()(
       totalSeconds: 0,
       startedAt: null,
       expectedEndAt: null,
+      stealthyBlockId: null,
+      stealthyDate: null,
 
       setWorkDuration: (minutes: number) => set({ workDuration: minutes }),
 
@@ -144,6 +150,9 @@ export const usePomodoroStore = create<PomodoroState>()(
         if (get().isPaused) return
         set({ isPaused: true, autoPaused: true })
       },
+
+      setStealthyBlockId: (id) => set({ stealthyBlockId: id }),
+      setStealthyDate: (date) => set({ stealthyDate: date }),
 
       autoResume: () => {
         if (!get().autoPaused) return

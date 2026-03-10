@@ -1,6 +1,6 @@
 {
   "name": "bloc",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Bloc - AI-powered task manager with calendar view",
   "type": "module",
   "main": "./out/main/index.js",
