@@ -45,16 +45,16 @@ export default function RadarView() {
     const items: RadarTask[] = []
 
     for (const [dateKey, taskList] of Object.entries(tasks)) {
-      if (dateKey.includes('__block__')) continue
+      const blockMatch = dateKey.match(/^(.+)__block__(.+)$/)
+      const baseDate = blockMatch ? blockMatch[1] : dateKey
 
-      const baseDate = dateKey
       for (const task of taskList) {
         if (task.completed) continue
         if (!task.text.trim()) continue
 
         const age = dateKey === BACKLOG_KEY
           ? differenceInDays(now, task.createdAt)
-          : differenceInDays(now, parseISO(dateKey))
+          : differenceInDays(now, parseISO(baseDate))
 
         const sub = countSubtasks(task.subtasks)
 
