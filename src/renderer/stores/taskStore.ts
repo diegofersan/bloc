@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { useClipboardStore } from './clipboardStore'
 
+export const BACKLOG_KEY = '__backlog__'
+
 export interface Task {
   id: string
   text: string
@@ -584,7 +586,7 @@ export const useTaskStore = create<TaskState>()(
       },
 
       getDatesWithTasks: () => {
-        return Object.keys(get().tasks).filter((date) => get().tasks[date].length > 0)
+        return Object.keys(get().tasks).filter((date) => date !== BACKLOG_KEY && get().tasks[date].length > 0)
       },
 
       addDistraction: (date, text) => {

@@ -4,8 +4,9 @@ import { ArrowLeft, Calendar, X, ArrowRight, Inbox, ListTodo, Eye, EyeOff, Clock
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { useTaskStore, type Distraction, type Task } from '../stores/taskStore'
+import { useTaskStore, type Distraction, type Task, BACKLOG_KEY } from '../stores/taskStore'
 import { useTimeBlockStore } from '../stores/timeBlockStore'
+import TaskEditor from '../components/TaskEditor'
 
 type Tab = 'inbox' | 'tasks'
 
@@ -218,6 +219,7 @@ interface TaskEntry {
 
 function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnType<typeof useNavigate> }) {
   const tasks = useTaskStore((s) => s.tasks)
+  const backlogTasks = tasks[BACKLOG_KEY] ?? []
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const [showCompleted, setShowCompleted] = useState(false)
 
@@ -225,6 +227,7 @@ function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
     const entries: TaskEntry[] = []
 
     for (const [dateKey, taskList] of Object.entries(tasks)) {
+      if (dateKey === BACKLOG_KEY) continue
       const blockMatch = dateKey.match(/^(.+)__block__(.+)$/)
       const baseDate = blockMatch ? blockMatch[1] : dateKey
       const blockId = blockMatch ? blockMatch[2] : null
@@ -257,50 +260,52 @@ function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
     return grouped.reduce((acc, [, items]) => acc + items.length, 0)
   }, [grouped])
 
+  const hasContent = backlogTasks.length > 0 || totalCount > 0
+
   return (
-    <div className={`flex-1 overflow-y-auto pb-8 ${isNarrow ? 'px-3' : 'pl-5 pr-6'}`}>
-      <div className="flex items-center justify-between pt-4 mb-4">
-        <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-          Todas as Tarefas
-        </h2>
-        <button
-          onClick={() => setShowCompleted((v) => !v)}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
-        >
-          {showCompleted ? <EyeOff size={12} /> : <Eye size={12} />}
-          {showCompleted ? 'Esconder concluídas' : 'Mostrar concluídas'}
-        </button>
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Backlog TaskEditor — always visible */}
+      <div className="shrink-0 border-b border-border/30" style={{ minHeight: hasContent ? undefined : '100%' }}>
+        <TaskEditor date={BACKLOG_KEY} tasks={backlogTasks} />
       </div>
 
-      {totalCount > 0 ? (
-        grouped.map(([baseDate, items]) => (
-          <div key={baseDate} className="mb-5">
+      {/* Existing dated tasks */}
+      {hasContent && (
+        <div className={`flex-1 overflow-y-auto pb-8 ${isNarrow ? 'px-3' : 'pl-5 pr-6'}`}>
+          <div className="flex items-center justify-between pt-4 mb-4">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+              Tarefas com Data
+            </h2>
             <button
-              onClick={() => navigate(`/day/${baseDate}`)}
-              className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 sticky top-0 bg-bg-primary py-1 hover:text-accent transition-colors"
+              onClick={() => setShowCompleted((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
             >
-              {format(parseISO(baseDate), "EEEE, d 'de' MMMM", { locale: pt })}
+              {showCompleted ? <EyeOff size={12} /> : <Eye size={12} />}
+              {showCompleted ? 'Esconder concluídas' : 'Mostrar concluídas'}
             </button>
-
-            {items.map((entry) => (
-              <TaskItem key={`${entry.dateKey}-${entry.task.id}`} entry={entry} navigate={navigate} showCompleted={showCompleted} />
-            ))}
           </div>
-        ))
-      ) : (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
-          className="flex flex-col items-center justify-center h-full text-center"
-        >
-          <p className="text-lg font-medium text-text-primary mb-1">
-            {showCompleted ? 'Sem tarefas.' : 'Tudo concluído.'}
-          </p>
-          <p className="text-sm text-text-muted">
-            {showCompleted ? 'Nenhuma tarefa registada.' : 'Sem tarefas pendentes.'}
-          </p>
-        </motion.div>
+
+          {totalCount > 0 ? (
+            grouped.map(([baseDate, items]) => (
+              <div key={baseDate} className="mb-5">
+                <button
+                  onClick={() => navigate(`/day/${baseDate}`)}
+                  className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2 sticky top-0 bg-bg-primary py-1 hover:text-accent transition-colors"
+                >
+                  {format(parseISO(baseDate), "EEEE, d 'de' MMMM", { locale: pt })}
+                </button>
+
+                {items.map((entry) => (
+                  <TaskItem key={`${entry.dateKey}-${entry.task.id}`} entry={entry} navigate={navigate} showCompleted={showCompleted} />
+                ))}
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-text-muted text-center py-4">
+              Sem tarefas com data.
+            </p>
+          )}
+        </div>
       )}
     </div>
   )

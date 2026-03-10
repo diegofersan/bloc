@@ -3,7 +3,7 @@ import { Plus, Search, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { useTaskStore } from '../stores/taskStore'
+import { useTaskStore, BACKLOG_KEY } from '../stores/taskStore'
 
 interface PendingTasksPanelProps {
   currentDate: string
@@ -16,22 +16,28 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
   const createTaskRef = useTaskStore((s) => s.createTaskRef)
   const removeTask = useTaskStore((s) => s.removeTask)
 
-  const grouped = useMemo(() => {
+  const { backlogItems, grouped } = useMemo(() => {
     // Gather all pending tasks across dates (with subtask info)
     const result: Array<{ task: { id: string; text: string; subtasks: Array<{ id: string; text: string; completed: boolean }> }; date: string }> = []
+    const backlog: typeof result = []
     for (const [date, taskList] of Object.entries(tasks)) {
       if (date.includes('__block__')) continue
       if (date === currentDate) continue
       for (const task of taskList) {
         if (!task.completed) {
-          result.push({
+          const entry = {
             task: {
               id: task.id,
               text: task.text,
               subtasks: task.subtasks.map((s) => ({ id: s.id, text: s.text, completed: s.completed }))
             },
             date
-          })
+          }
+          if (date === BACKLOG_KEY) {
+            backlog.push(entry)
+          } else {
+            result.push(entry)
+          }
         }
       }
     }
@@ -42,12 +48,14 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
 
     // Filter out already-linked tasks
     const filtered = result.filter((item) => !linkedIds.has(item.task.id))
+    const filteredBacklog = backlog.filter((item) => !linkedIds.has(item.task.id))
 
     // Apply search filter
     const query = search.trim().toLowerCase()
-    const searched = query
-      ? filtered.filter((item) => item.task.text.toLowerCase().includes(query))
-      : filtered
+    const applySearch = <T extends { task: { text: string } }>(items: T[]) =>
+      query ? items.filter((item) => item.task.text.toLowerCase().includes(query)) : items
+    const searched = applySearch(filtered)
+    const searchedBacklog = applySearch(filteredBacklog)
 
     // Group by date
     const groups = new Map<string, typeof searched>()
@@ -61,10 +69,13 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
     }
 
     // Sort by date descending
-    return Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
+    return {
+      backlogItems: searchedBacklog,
+      grouped: Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
+    }
   }, [tasks, taskRefs, currentDate, search])
 
-  const isEmpty = grouped.length === 0
+  const isEmpty = grouped.length === 0 && backlogItems.length === 0
 
   return (
     <div className="flex flex-col h-full">
@@ -90,29 +101,48 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
             <span className="text-sm text-text-muted">Nenhuma tarefa pendente</span>
           </div>
         ) : (
-          grouped.map(([date, items]) => (
-            <div key={date} className="mb-3">
-              {/* Date header */}
-              <div className="px-3 py-1.5">
-                <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
-                  {format(parseISO(date), "d 'de' MMMM", { locale: pt })}
-                </span>
+          <>
+            {backlogItems.length > 0 && (
+              <div className="mb-3">
+                <div className="px-3 py-1.5">
+                  <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
+                    Sem data
+                  </span>
+                </div>
+                <AnimatePresence mode="popLayout">
+                  {backlogItems.map((item) => (
+                    <PendingTaskRow
+                      key={item.task.id}
+                      text={item.task.text}
+                      subtasks={item.task.subtasks}
+                      onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
+                      onDelete={() => removeTask(item.date, item.task.id)}
+                    />
+                  ))}
+                </AnimatePresence>
               </div>
-
-              {/* Tasks */}
-              <AnimatePresence mode="popLayout">
-                {items.map((item) => (
-                  <PendingTaskRow
-                    key={item.task.id}
-                    text={item.task.text}
-                    subtasks={item.task.subtasks}
-                    onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
-                    onDelete={() => removeTask(item.date, item.task.id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-          ))
+            )}
+            {grouped.map(([date, items]) => (
+              <div key={date} className="mb-3">
+                <div className="px-3 py-1.5">
+                  <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
+                    {format(parseISO(date), "d 'de' MMMM", { locale: pt })}
+                  </span>
+                </div>
+                <AnimatePresence mode="popLayout">
+                  {items.map((item) => (
+                    <PendingTaskRow
+                      key={item.task.id}
+                      text={item.task.text}
+                      subtasks={item.task.subtasks}
+                      onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
+                      onDelete={() => removeTask(item.date, item.task.id)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            ))}
+          </>
         )}
       </div>
     </div>

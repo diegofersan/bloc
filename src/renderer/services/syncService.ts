@@ -250,7 +250,7 @@ async function migrateLocalStorageToICloud(): Promise<void> {
   for (const date of Object.keys(pomodoroState.completedPomodoros)) allDates.add(date)
 
   for (const date of allDates) {
-    if (date.includes('__block__')) continue // per-block task keys are local-only
+    if (date.includes('__block__') || date === '__backlog__') continue // per-block and backlog task keys are local-only
     writeDayToICloud(date)
   }
 
@@ -339,7 +339,7 @@ function subscribeToStoreChanges(): void {
 
     const allChanged = new Set([...changedTaskDates, ...changedDistractionDates, ...changedRefDates])
     for (const date of allChanged) {
-      if (date.includes('__block__')) continue // per-block task keys are local-only
+      if (date.includes('__block__') || date === '__backlog__') continue // per-block and backlog task keys are local-only
       debouncedWrite(date)
     }
   })
