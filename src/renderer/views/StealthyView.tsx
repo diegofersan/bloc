@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronUp, ChevronDown, Maximize2 } from 'lucide-react'
 import { format, parseISO, isToday } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -91,6 +91,50 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
   // Gap to next block
   const gapMinutes = useMemo(() => getGapMinutes(blocks), [blocks])
 
+  // Border flash on pomo/break end + countdown lead-in
+  const pomodoroStatus = usePomodoroStore((s) => s.status)
+  const pomodoroSeconds = usePomodoroStore((s) => s.secondsRemaining)
+  const pomodoroIsPaused = usePomodoroStore((s) => s.isPaused)
+  const prevPomodoroStatusRef = useRef(pomodoroStatus)
+  const [borderFlash, setBorderFlash] = useState<'work' | 'break' | null>(null)
+  const [borderCountdown, setBorderCountdown] = useState<'work' | 'break' | null>(null)
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Lead-in: start border at 3 seconds remaining
+  useEffect(() => {
+    if (pomodoroIsPaused || pomodoroStatus === 'idle') {
+      setBorderCountdown(null)
+      return
+    }
+    if (pomodoroSeconds <= 3 && pomodoroSeconds > 0) {
+      setBorderCountdown(pomodoroStatus === 'working' ? 'work' : 'break')
+    } else {
+      setBorderCountdown(null)
+    }
+  }, [pomodoroSeconds, pomodoroStatus, pomodoroIsPaused])
+
+  // Full flash on transition
+  useEffect(() => {
+    const prev = prevPomodoroStatusRef.current
+    prevPomodoroStatusRef.current = pomodoroStatus
+
+    if (prev === 'working' && pomodoroStatus === 'break') {
+      setBorderCountdown(null)
+      setBorderFlash('work')
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+      flashTimerRef.current = setTimeout(() => setBorderFlash(null), 2000)
+    } else if (prev === 'break' && pomodoroStatus === 'idle') {
+      setBorderCountdown(null)
+      setBorderFlash('break')
+      if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+      flashTimerRef.current = setTimeout(() => setBorderFlash(null), 2000)
+    }
+  }, [pomodoroStatus])
+
+  useEffect(() => {
+    return () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current) }
+  }, [])
+
   // Resize window on collapse/expand
   useEffect(() => {
     if (collapsed) {
@@ -108,6 +152,38 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
     setDistractionText('')
   }, [distractionText, activeDate, addDistraction])
 
+  const activeBorder = borderFlash || borderCountdown
+  const borderColor = activeBorder === 'work' ? '#8b5cf6' : activeBorder === 'break' ? '#10b981' : null
+
+  const borderFlashOverlay = (
+    <AnimatePresence>
+      {borderFlash && (
+        <motion.div
+          key={'flash-' + borderFlash}
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 1.8, ease: 'easeOut' }}
+          className="absolute inset-0 rounded-xl pointer-events-none z-50"
+          style={{
+            boxShadow: `inset 0 0 0 6px ${borderColor}`
+          }}
+        />
+      )}
+      {borderCountdown && !borderFlash && (
+        <motion.div
+          key={'countdown-' + borderCountdown}
+          initial={{ opacity: 0.4 }}
+          animate={{ opacity: [0.4, 0.9, 0.4] }}
+          transition={{ duration: 0.8, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute inset-0 rounded-xl pointer-events-none z-50"
+          style={{
+            boxShadow: `inset 0 0 0 6px ${borderColor}`
+          }}
+        />
+      )}
+    </AnimatePresence>
+  )
+
   // --- COLLAPSED PLAYER VIEW ---
   if (collapsed) {
     return (
@@ -115,8 +191,9 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.15 }}
-        className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
+        className="relative h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
       >
+        {borderFlashOverlay}
         {/* Row 1: PomodoroTimer + task + expand */}
         <div className="titlebar-drag flex items-center gap-2 px-3 pt-2 pb-1">
           <div className="shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
@@ -158,8 +235,9 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
-      className="h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
+      className="relative h-full flex flex-col bg-bg-primary/95 backdrop-blur-xl rounded-xl overflow-hidden select-none"
     >
+      {borderFlashOverlay}
       {/* Drag handle + controls */}
       <div className="titlebar-drag shrink-0 flex items-center justify-between px-3 pt-2 pb-1">
         <span className="text-[10px] font-medium text-text-muted tracking-wider capitalize">{dateLabel}</span>

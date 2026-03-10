@@ -23,6 +23,9 @@ if (process.contextIsolated) {
       updatePomodoroTray: (time: string | null, status: string | null) => {
         ipcRenderer.send('pomodoro-tray-update', { time, status })
       },
+      focusWindow: () => {
+        ipcRenderer.send('focus-window')
+      },
       onUpdateAvailable: (callback: (version: string) => void) => {
         const handler = (_event: Electron.IpcRendererEvent, version: string) => callback(version)
         ipcRenderer.on('update-available', handler)

@@ -16,12 +16,14 @@ interface SettingsState {
   primaryTimezone: string
   secondaryTimezone: string | null
   githubToken: string
+  confettiOnComplete: boolean
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
   setPrimaryTimezone: (tz: string) => void
   setSecondaryTimezone: (tz: string | null) => void
   setGithubToken: (token: string) => void
+  setConfettiOnComplete: (v: boolean) => void
   isConfigured: () => boolean
 }
 
@@ -34,6 +36,7 @@ export const useSettingsStore = create<SettingsState>()(
       primaryTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       secondaryTimezone: null,
       githubToken: '',
+      confettiOnComplete: true,
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },
@@ -56,6 +59,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setGithubToken: (token) => {
         set({ githubToken: token })
+      },
+
+      setConfettiOnComplete: (v) => {
+        set({ confettiOnComplete: v })
       },
 
       isConfigured: () => {

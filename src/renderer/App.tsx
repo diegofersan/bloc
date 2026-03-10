@@ -13,6 +13,7 @@ import StealthyView from './views/StealthyView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
+import BlockExplosion from './components/BlockExplosion'
 import IdeaButton from './components/IdeaButton'
 import { useTaskStore } from './stores/taskStore'
 import { useTimeBlockStore } from './stores/timeBlockStore'
@@ -28,6 +29,7 @@ declare global {
   interface Window {
     bloc?: {
       getAppVersion: () => string
+      focusWindow: () => void
       onNavigate: (callback: (path: string) => void) => () => void
       onQuickCapture: (callback: () => void) => () => void
       updatePomodoroTray: (time: string | null, status: string | null) => void
@@ -457,6 +459,7 @@ export default function App() {
           onClose={() => setToast((t) => ({ ...t, visible: false }))}
           action={toast.action}
         />
+        <BlockExplosion />
         <IdeaButton
           onToast={(msg, action) => setToast({ message: msg, visible: true, action })}
         />

@@ -40,6 +40,7 @@ export default function SettingsView() {
   const { provider, apiKey, model, setProvider, setApiKey, setModel, primaryTimezone, secondaryTimezone, setPrimaryTimezone, setSecondaryTimezone, githubToken, setGithubToken } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
+  const { confettiOnComplete, setConfettiOnComplete } = useSettingsStore()
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
   const {
     isConnected: gcalConnected,
@@ -364,6 +365,26 @@ export default function SettingsView() {
               <motion.div
                 className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
                 animate={{ x: blockDuringPomodoro ? 16 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </button>
+          </div>
+
+          {/* Confetti explosion toggle */}
+          <div className="flex items-center justify-between mt-4">
+            <div>
+              <label className="text-sm font-medium text-text-secondary">Explosão de blocos</label>
+              <p className="text-xs text-text-muted mt-0.5">Animação ao completar foco ou intervalo</p>
+            </div>
+            <button
+              onClick={() => setConfettiOnComplete(!confettiOnComplete)}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                confettiOnComplete ? 'bg-accent' : 'bg-bg-tertiary'
+              }`}
+            >
+              <motion.div
+                className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                animate={{ x: confettiOnComplete ? 16 : 0 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               />
             </button>

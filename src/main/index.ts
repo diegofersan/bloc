@@ -181,6 +181,13 @@ rm -rf "$TEMP_DIR"
       tray.setTitle(data.time ?? '')
     })
 
+    ipcMain.on('focus-window', () => {
+      if (!mainWindow) return
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    })
+
     // Animate opacity from current to target over duration (ms)
     function animateOpacity(win: BrowserWindow, from: number, to: number, duration: number): void {
       const steps = 12
