@@ -13,7 +13,7 @@ import {
   subMonths
 } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Settings, Inbox, ListTodo } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings, Inbox, ListTodo, Radar } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
@@ -124,6 +124,13 @@ export default function CalendarView() {
             className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
           >
             <ListTodo size={16} />
+          </button>
+          <button
+            onClick={() => navigate('/radar')}
+            aria-label="Radar"
+            className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
+          >
+            <Radar size={16} />
           </button>
           <button
             onClick={() => navigate('/inbox')}

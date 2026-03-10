@@ -7,6 +7,7 @@ import TimelineView from './views/TimelineView'
 import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import TrashView from './views/TrashView'
+import RadarView from './views/RadarView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
@@ -145,6 +146,7 @@ function AnimatedRoutes() {
         <Route path="/inbox" element={<InboxView />} />
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/trash" element={<TrashView />} />
+        <Route path="/radar" element={<RadarView />} />
       </Routes>
     </motion.div>
   )
