@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, EyeOff } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Play, Pause, Square, Check } from 'lucide-react'
+import { Play, Pause, Square, Check, EyeOff } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { playWorkDoneSound, playBreakDoneSound, playCountdownTick } from '../services/notificationSound'
@@ -11,7 +11,8 @@ function formatTime(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-export default function PomodoroTimer() {
+/** Core timer UI — works with any date source */
+export function PomodoroTimerCore({ date, hideStealthy }: { date?: string; hideStealthy?: boolean }) {
   const { status, isPaused, secondsRemaining } = usePomodoroStore()
   const startWork = usePomodoroStore((s) => s.startWork)
   const pause = usePomodoroStore((s) => s.pause)
@@ -19,7 +20,6 @@ export default function PomodoroTimer() {
   const stop = usePomodoroStore((s) => s.stop)
   const tick = usePomodoroStore((s) => s.tick)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const { date } = useParams<{ date: string }>()
 
   const [confirmingStop, setConfirmingStop] = useState(false)
   const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -130,6 +130,26 @@ export default function PomodoroTimer() {
           </motion.button>
         )}
       </AnimatePresence>
+
+      {/* Stealthy mode button */}
+      {!hideStealthy && (
+        <button
+          onClick={() => {
+            window.bloc?.stealthy.enter({ width: 480, height: 540 })
+          }}
+          aria-label="Modo Stealthy"
+          className="p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-secondary"
+          title="Stealthy (⌘⇧H)"
+        >
+          <EyeOff size={13} />
+        </button>
+      )}
     </div>
   )
+}
+
+/** Default export — uses useParams for date (must be inside Router) */
+export default function PomodoroTimer() {
+  const { date } = useParams<{ date: string }>()
+  return <PomodoroTimerCore date={date} />
 }

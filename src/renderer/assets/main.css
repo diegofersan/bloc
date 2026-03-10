@@ -126,4 +126,13 @@
   }
 
   /* Radar sweep — animation handled by SVG <animateTransform> */
+
+  /* Stealthy mode — compact floating window */
+  .stealthy-drag {
+    -webkit-app-region: drag;
+    cursor: grab;
+    &:active {
+      cursor: grabbing;
+    }
+  }
 }

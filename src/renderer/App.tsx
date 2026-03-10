@@ -8,6 +8,7 @@ import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import TrashView from './views/TrashView'
 import RadarView from './views/RadarView'
+import StealthyView from './views/StealthyView'
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
@@ -47,6 +48,13 @@ declare global {
         disable: () => Promise<boolean>
         isActive: () => Promise<boolean>
         cleanup: () => Promise<void>
+      }
+      stealthy: {
+        enter: (opts: { width: number; height: number }) => Promise<void>
+        exit: () => Promise<void>
+        resize: (opts: { width: number; height: number; resizable?: boolean }) => Promise<void>
+        onToggle: (callback: () => void) => () => void
+        onChange: (callback: (active: boolean) => void) => () => void
       }
       gcal: {
         startAuth: () => Promise<{ success: boolean; error?: string }>
@@ -162,6 +170,7 @@ interface ToastState {
 export default function App() {
   const [showCapture, setShowCapture] = useState(false)
   const [showStandup, setShowStandup] = useState(false)
+  const [stealthyMode, setStealthyMode] = useState(false)
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false })
   const lastDeleted = useTaskStore((s) => s.lastDeleted)
   const undoDelete = useTaskStore((s) => s.undoDelete)
@@ -169,6 +178,41 @@ export default function App() {
   const clearDeleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const toggleCapture = useCallback(() => setShowCapture((v) => !v), [])
+
+  // Stealthy mode
+  const enterStealthy = useCallback(() => {
+    setStealthyMode(true)
+    window.bloc?.stealthy.enter({ width: 480, height: 540 })
+  }, [])
+
+  const exitStealthy = useCallback(() => {
+    setStealthyMode(false)
+    window.bloc?.stealthy.exit()
+  }, [])
+
+  // Listen for stealthy toggle from global shortcut
+  useEffect(() => {
+    const cleanupToggle = window.bloc?.stealthy.onToggle(() => {
+      setStealthyMode((prev) => {
+        if (prev) {
+          window.bloc?.stealthy.exit()
+          return false
+        } else {
+          window.bloc?.stealthy.enter({ width: 480, height: 540 })
+          return true
+        }
+      })
+    })
+    return () => cleanupToggle?.()
+  }, [])
+
+  // Listen for stealthy state changes from main process (e.g. button in PomodoroTimer)
+  useEffect(() => {
+    const cleanup = window.bloc?.stealthy.onChange((active) => {
+      setStealthyMode(active)
+    })
+    return () => cleanup?.()
+  }, [])
 
   // Auto-update listeners
   useEffect(() => {
@@ -295,6 +339,18 @@ export default function App() {
         e.preventDefault()
         setShowStandup((v) => !v)
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault()
+        setStealthyMode((prev) => {
+          if (prev) {
+            window.bloc?.stealthy.exit()
+            return false
+          } else {
+            window.bloc?.stealthy.enter({ width: 480, height: 540 })
+            return true
+          }
+        })
+      }
     }
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
@@ -343,6 +399,14 @@ export default function App() {
 
   function showCapturedToast() {
     setToast({ message: 'Distração anotada', visible: true })
+  }
+
+  if (stealthyMode) {
+    return (
+      <div className="h-full text-text-primary">
+        <StealthyView onExit={exitStealthy} />
+      </div>
+    )
   }
 
   return (
