@@ -169,7 +169,11 @@ export default function TimelineView() {
     let count = 0
     const linkedIds = new Set((allTaskRefs[date] || []).map((r) => r.originTaskId))
     for (const [d, taskList] of Object.entries(allStoreTasks)) {
-      if (d.includes('__block__') || d === date) continue
+      // Extract base date from composite keys (e.g. "2026-03-10__block__uuid")
+      const blockMatch = d.match(/^(.+)__block__(.+)$/)
+      const baseDate = blockMatch ? blockMatch[1] : d
+      // Skip tasks from the current day
+      if (baseDate === date) continue
       for (const task of taskList) {
         if (!task.completed && !linkedIds.has(task.id)) count++
       }

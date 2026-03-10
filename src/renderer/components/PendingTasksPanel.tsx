@@ -18,11 +18,15 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
 
   const { backlogItems, grouped } = useMemo(() => {
     // Gather all pending tasks across dates (with subtask info)
-    const result: Array<{ task: { id: string; text: string; subtasks: Array<{ id: string; text: string; completed: boolean }> }; date: string }> = []
+    const result: Array<{ task: { id: string; text: string; subtasks: Array<{ id: string; text: string; completed: boolean }> }; date: string; displayDate: string }> = []
     const backlog: typeof result = []
-    for (const [date, taskList] of Object.entries(tasks)) {
-      if (date.includes('__block__')) continue
-      if (date === currentDate) continue
+    for (const [dateKey, taskList] of Object.entries(tasks)) {
+      // Extract base date from composite keys (e.g. "2026-03-10__block__uuid" → "2026-03-10")
+      const blockMatch = dateKey.match(/^(.+)__block__(.+)$/)
+      const baseDate = blockMatch ? blockMatch[1] : dateKey
+      // Skip tasks from the current day (both day-level and block-scoped)
+      if (baseDate === currentDate) continue
+      const isBacklog = dateKey === BACKLOG_KEY
       for (const task of taskList) {
         if (!task.completed) {
           const entry = {
@@ -31,9 +35,10 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
               text: task.text,
               subtasks: task.subtasks.map((s) => ({ id: s.id, text: s.text, completed: s.completed }))
             },
-            date
+            date: dateKey,
+            displayDate: baseDate
           }
-          if (date === BACKLOG_KEY) {
+          if (isBacklog) {
             backlog.push(entry)
           } else {
             result.push(entry)
@@ -57,14 +62,14 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
     const searched = applySearch(filtered)
     const searchedBacklog = applySearch(filteredBacklog)
 
-    // Group by date
+    // Group by display date (base date, not composite key)
     const groups = new Map<string, typeof searched>()
     for (const item of searched) {
-      const list = groups.get(item.date)
+      const list = groups.get(item.displayDate)
       if (list) {
         list.push(item)
       } else {
-        groups.set(item.date, [item])
+        groups.set(item.displayDate, [item])
       }
     }
 
