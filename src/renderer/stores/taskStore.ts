@@ -82,6 +82,7 @@ interface TaskState {
   getResolvedTask: (ref: TaskRef) => Task | null
   unindentTask: (date: string, subtaskId: string) => boolean
   getPendingTasksAcrossDates: () => Array<{ task: Task; date: string }>
+  moveBlockTasks: (fromDate: string, blockId: string, toDate: string) => void
 }
 
 function toggleTaskInList(tasks: Task[], taskId: string): Task[] {
@@ -828,6 +829,29 @@ export const useTaskStore = create<TaskState>()(
           }
         }
         return result.sort((a, b) => b.date.localeCompare(a.date))
+      },
+
+      moveBlockTasks: (fromDate, blockId, toDate) => {
+        set((state) => {
+          const oldKey = `${fromDate}__block__${blockId}`
+          const newKey = `${toDate}__block__${blockId}`
+          const blockTasks = state.tasks[oldKey]
+          const blockRefs = state.taskRefs[oldKey]
+          const newTasks = { ...state.tasks }
+          const newTaskRefs = { ...state.taskRefs }
+
+          if (blockTasks) {
+            delete newTasks[oldKey]
+            newTasks[newKey] = blockTasks.map((t) => updateTaskDate(t, toDate))
+          }
+
+          if (blockRefs) {
+            delete newTaskRefs[oldKey]
+            newTaskRefs[newKey] = [...blockRefs]
+          }
+
+          return { tasks: newTasks, taskRefs: newTaskRefs }
+        })
       },
 
       cleanOldDistractions: (daysToKeep = 90) => {

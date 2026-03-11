@@ -6,6 +6,7 @@ import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import { useTaskStore } from '../stores/taskStore'
+import DeferBlockModal from '../components/DeferBlockModal'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import TimelineGrid from '../components/TimelineGrid'
 import DistractionItem from '../components/DistractionItem'
@@ -164,6 +165,9 @@ export default function TimelineView() {
   const addBlock = useTimeBlockStore((s) => s.addBlock)
   const updateBlock = useTimeBlockStore((s) => s.updateBlock)
   const removeBlock = useTimeBlockStore((s) => s.removeBlock)
+  const deferBlock = useTimeBlockStore((s) => s.deferBlock)
+  const moveBlockTasks = useTaskStore((s) => s.moveBlockTasks)
+  const [deferringBlock, setDeferringBlock] = useState<TimeBlock | null>(null)
 
   // Distractions
   const allDistractions = useTaskStore((s) => s.distractions)
@@ -311,6 +315,14 @@ export default function TimelineView() {
       removeBlock(date, blockId)
     },
     [date, removeBlock]
+  )
+
+  const handleDefer = useCallback(
+    (blockId: string) => {
+      const b = blocks.find((b) => b.id === blockId)
+      if (b) setDeferringBlock(b)
+    },
+    [blocks]
   )
 
   const commitTitle = useCallback(() => {
@@ -650,7 +662,7 @@ export default function TimelineView() {
         {/* Active tab content */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'timeline' ? (
-            <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
+            <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
           ) : (
             <div className="flex flex-col h-full overflow-hidden">
               <div className="shrink-0 px-3 pt-2 pb-3">
@@ -673,6 +685,18 @@ export default function TimelineView() {
           )}
         </div>
         <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
+        <DeferBlockModal
+          isOpen={!!deferringBlock}
+          onClose={() => setDeferringBlock(null)}
+          blockDate={deferringBlock?.date ?? ''}
+          onSelectDate={(toDate) => {
+            if (deferringBlock) {
+              deferBlock(deferringBlock.date, deferringBlock.id, toDate)
+              moveBlockTasks(deferringBlock.date, deferringBlock.id, toDate)
+              setDeferringBlock(null)
+            }
+          }}
+        />
       </div>
     )
   }
@@ -734,7 +758,7 @@ export default function TimelineView() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left: timeline grid */}
         <div style={{ width: `${leftPct}%` }} className="overflow-hidden">
-          <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
+          <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
         </div>
 
         {/* Divider */}
@@ -791,6 +815,18 @@ export default function TimelineView() {
         </div>
       </div>
       <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
+      <DeferBlockModal
+        isOpen={!!deferringBlock}
+        onClose={() => setDeferringBlock(null)}
+        blockDate={deferringBlock?.date ?? ''}
+        onSelectDate={(toDate) => {
+          if (deferringBlock) {
+            deferBlock(deferringBlock.date, deferringBlock.id, toDate)
+            moveBlockTasks(deferringBlock.date, deferringBlock.id, toDate)
+            setDeferringBlock(null)
+          }
+        }}
+      />
     </div>
   )
 }

@@ -35,6 +35,7 @@ interface TimeBlockState {
   getBlocksForDate: (date: string) => TimeBlock[]
   getDatesWithBlocks: () => string[]
   setBlocksForDate: (date: string, blocks: TimeBlock[]) => void
+  deferBlock: (fromDate: string, blockId: string, toDate: string) => void
 }
 
 export const useTimeBlockStore = create<TimeBlockState>()(
@@ -148,6 +149,25 @@ export const useTimeBlockStore = create<TimeBlockState>()(
           } else {
             newBlocks[date] = blocks
           }
+          return { blocks: newBlocks }
+        })
+      },
+
+      deferBlock: (fromDate, blockId, toDate) => {
+        set((state) => {
+          const dateBlocks = state.blocks[fromDate]
+          if (!dateBlocks) return state
+          const block = dateBlocks.find((b) => b.id === blockId)
+          if (!block) return state
+          const updated = dateBlocks.filter((b) => b.id !== blockId)
+          const newBlocks = { ...state.blocks }
+          if (updated.length === 0) {
+            delete newBlocks[fromDate]
+          } else {
+            newBlocks[fromDate] = updated
+          }
+          const deferredBlock: TimeBlock = { ...block, date: toDate, updatedAt: Date.now() }
+          newBlocks[toDate] = [...(newBlocks[toDate] || []), deferredBlock]
           return { blocks: newBlocks }
         })
       }
