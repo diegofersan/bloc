@@ -48,10 +48,22 @@ function getWeekDates(dateStr: string): string[] {
   return dates
 }
 
-/** Convert "HH:MM" to ms from midnight */
+/** Convert "HH:MM" to ms from midnight. Throws on invalid input. */
 function timeToMs(time: string): number {
-  const [h, m] = time.split(':').map(Number)
+  const match = time.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) throw new Error(`Invalid time format "${time}" — expected HH:MM (e.g. "09:30", "14:00")`)
+  const h = Number(match[1])
+  const m = Number(match[2])
+  if (h < 0 || h > 23) throw new Error(`Invalid hour ${h} — must be 0-23`)
+  if (m < 0 || m > 59) throw new Error(`Invalid minute ${m} — must be 0-59`)
   return (h * 60 + m) * 60 * 1000
+}
+
+const MIN_BLOCK_DURATION_MS = 15 * 60 * 1000 // 15 minutes
+
+/** Check if two time ranges overlap */
+function blocksOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+  return aStart < bEnd && bStart < aEnd
 }
 
 function getOrCreateDay(date: string): DayFileData {
@@ -314,24 +326,59 @@ server.tool(
 // create_time_block
 server.tool(
   'create_time_block',
-  'Create a new time block',
+  'Create a new time block on the user\'s daily timeline. IMPORTANT: Before creating blocks, call read_day first to check existing blocks and avoid overlaps. Each block must have a title, and times must not overlap with existing blocks. Minimum block duration is 15 minutes.',
   {
     date: z.string().describe('Date in YYYY-MM-DD format'),
-    title: z.string().describe('Block title'),
-    start_time: z.string().describe('Start time in HH:MM format'),
-    end_time: z.string().describe('End time in HH:MM format'),
+    title: z.string().min(1).describe('Block title — must not be empty'),
+    start_time: z.string().describe('Start time in HH:MM 24h format (e.g. "09:00", "14:30")'),
+    end_time: z.string().describe('End time in HH:MM 24h format (e.g. "10:30", "16:00"). Must be after start_time.'),
     color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)')
   },
   async ({ date, title, start_time, end_time, color }) => {
+    // Validate times
+    let startMs: number, endMs: number
+    try {
+      startMs = timeToMs(start_time)
+      endMs = timeToMs(end_time)
+    } catch (e: any) {
+      return { content: [{ type: 'text', text: e.message }], isError: true }
+    }
+
+    if (endMs <= startMs) {
+      return {
+        content: [{ type: 'text', text: `End time (${end_time}) must be after start time (${start_time})` }],
+        isError: true
+      }
+    }
+
+    if (endMs - startMs < MIN_BLOCK_DURATION_MS) {
+      return {
+        content: [{ type: 'text', text: `Block duration must be at least 15 minutes. Got ${start_time}-${end_time} (${(endMs - startMs) / 60000}min)` }],
+        isError: true
+      }
+    }
+
     const data = getOrCreateDay(date)
     if (!data.timeBlocks) data.timeBlocks = []
+
+    // Check for overlaps
+    const overlapping = data.timeBlocks.find(b => blocksOverlap(startMs, endMs, b.startTime, b.endTime))
+    if (overlapping) {
+      return {
+        content: [{
+          type: 'text',
+          text: `Time conflict: "${title}" (${start_time}-${end_time}) overlaps with existing block "${overlapping.title}" (${msToTime(overlapping.startTime)}-${msToTime(overlapping.endTime)}). Use read_day to see all existing blocks, then choose a free slot.`
+        }],
+        isError: true
+      }
+    }
 
     const now = Date.now()
     const block: TimeBlockData = {
       id: uuidv4(),
       title,
-      startTime: timeToMs(start_time),
-      endTime: timeToMs(end_time),
+      startTime: startMs,
+      endTime: endMs,
       color: (color as TimeBlockColor) ?? 'indigo',
       createdAt: now,
       updatedAt: now
@@ -351,13 +398,13 @@ server.tool(
 // update_time_block
 server.tool(
   'update_time_block',
-  'Update an existing time block',
+  'Update an existing time block. Time changes are validated for overlaps with other blocks.',
   {
     date: z.string().describe('Date in YYYY-MM-DD format'),
     block_id: z.string().describe('Block ID'),
     title: z.string().optional().describe('New title'),
-    start_time: z.string().optional().describe('New start time in HH:MM format'),
-    end_time: z.string().optional().describe('New end time in HH:MM format'),
+    start_time: z.string().optional().describe('New start time in HH:MM 24h format (e.g. "09:00")'),
+    end_time: z.string().optional().describe('New end time in HH:MM 24h format (e.g. "10:30")'),
     color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('New color')
   },
   async ({ date, block_id, title, start_time, end_time, color }) => {
@@ -371,9 +418,49 @@ server.tool(
       return { content: [{ type: 'text', text: `Block ${block_id} not found on ${date}` }], isError: true }
     }
 
+    // Parse new times or keep existing
+    let newStart = block.startTime
+    let newEnd = block.endTime
+    try {
+      if (start_time !== undefined) newStart = timeToMs(start_time)
+      if (end_time !== undefined) newEnd = timeToMs(end_time)
+    } catch (e: any) {
+      return { content: [{ type: 'text', text: e.message }], isError: true }
+    }
+
+    if (newEnd <= newStart) {
+      return {
+        content: [{ type: 'text', text: `End time must be after start time` }],
+        isError: true
+      }
+    }
+
+    if (newEnd - newStart < MIN_BLOCK_DURATION_MS) {
+      return {
+        content: [{ type: 'text', text: `Block duration must be at least 15 minutes` }],
+        isError: true
+      }
+    }
+
+    // Check overlaps with other blocks (excluding self)
+    if (start_time !== undefined || end_time !== undefined) {
+      const overlapping = data.timeBlocks?.find(b =>
+        b.id !== block_id && blocksOverlap(newStart, newEnd, b.startTime, b.endTime)
+      )
+      if (overlapping) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Time conflict: updated times overlap with "${overlapping.title}" (${msToTime(overlapping.startTime)}-${msToTime(overlapping.endTime)})`
+          }],
+          isError: true
+        }
+      }
+    }
+
     if (title !== undefined) block.title = title
-    if (start_time !== undefined) block.startTime = timeToMs(start_time)
-    if (end_time !== undefined) block.endTime = timeToMs(end_time)
+    block.startTime = newStart
+    block.endTime = newEnd
     if (color !== undefined) block.color = color as TimeBlockColor
     block.updatedAt = Date.now()
 

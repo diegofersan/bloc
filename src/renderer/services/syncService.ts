@@ -58,6 +58,7 @@ let unsubscribeTimeBlocks: (() => void) | null = null
 let cleanupFileChanged: (() => void) | null = null
 let debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
 let icloudAvailable = false
+let applyingExternal = false // suppress write-back while applying external changes
 
 // --- Conversion helpers ---
 
@@ -198,6 +199,7 @@ function writeDayToICloud(date: string): void {
 }
 
 function debouncedWrite(date: string): void {
+  if (applyingExternal) return // don't write back while applying external changes
   const existing = debounceTimers.get(date)
   if (existing) clearTimeout(existing)
   debounceTimers.set(
@@ -210,59 +212,68 @@ function debouncedWrite(date: string): void {
 }
 
 function applyExternalChange(data: DayFileData): void {
-  const taskState = useTaskStore.getState()
-  const pomodoroState = usePomodoroStore.getState()
-
-  // Check updatedAt — last-write-wins
-  const currentData = buildDayFileData(data.date)
-  if (currentData.updatedAt > data.updatedAt) return
-
-  // Apply tasks
-  const newTasks = data.tasks.map((t) => dataToTask(t, data.date))
-  useTaskStore.setState({
-    tasks: { ...taskState.tasks, [data.date]: newTasks }
-  })
-
-  // Apply distractions
-  const newDistractions = data.distractions.map((d) => dataToDistraction(d, data.date))
-  useTaskStore.setState({
-    distractions: { ...taskState.distractions, [data.date]: newDistractions }
-  })
-
-  // Apply task references
-  const newRefs = (data.references || []).map(dataToTaskRef)
-  useTaskStore.setState({
-    taskRefs: { ...taskState.taskRefs, [data.date]: newRefs }
-  })
-
-  // Apply pomodoros
-  if (data.pomodoros !== (pomodoroState.completedPomodoros[data.date] || 0)) {
-    usePomodoroStore.setState({
-      completedPomodoros: {
-        ...pomodoroState.completedPomodoros,
-        [data.date]: data.pomodoros
-      }
-    })
-  }
-
-  // Apply time blocks
-  if (data.timeBlocks && data.timeBlocks.length > 0) {
-    const newTimeBlocks = data.timeBlocks.map((b) => dataToTimeBlock(b, data.date))
+  applyingExternal = true
+  try {
+    const taskState = useTaskStore.getState()
+    const pomodoroState = usePomodoroStore.getState()
     const timeBlockState = useTimeBlockStore.getState()
+
+    // Apply tasks
+    const newTasks = data.tasks.map((t) => dataToTask(t, data.date))
+    useTaskStore.setState({
+      tasks: { ...taskState.tasks, [data.date]: newTasks }
+    })
+
+    // Apply distractions
+    const newDistractions = data.distractions.map((d) => dataToDistraction(d, data.date))
+    useTaskStore.setState({
+      distractions: { ...taskState.distractions, [data.date]: newDistractions }
+    })
+
+    // Apply task references
+    const newRefs = (data.references || []).map(dataToTaskRef)
+    useTaskStore.setState({
+      taskRefs: { ...taskState.taskRefs, [data.date]: newRefs }
+    })
+
+    // Apply pomodoros
+    if (data.pomodoros !== (pomodoroState.completedPomodoros[data.date] || 0)) {
+      usePomodoroStore.setState({
+        completedPomodoros: {
+          ...pomodoroState.completedPomodoros,
+          [data.date]: data.pomodoros
+        }
+      })
+    }
+
+    // Apply time blocks (including empty array when all blocks deleted)
+    const newTimeBlocks = (data.timeBlocks || []).map((b) => dataToTimeBlock(b, data.date))
     useTimeBlockStore.setState({
       blocks: { ...timeBlockState.blocks, [data.date]: newTimeBlocks }
     })
-  }
 
-  // Apply block tasks
-  if (data.blockTasks) {
+    // Apply block tasks — also clean up orphaned block task keys
     const currentTasks = useTaskStore.getState().tasks
     const updatedTasks = { ...currentTasks }
-    for (const [blockId, tasks] of Object.entries(data.blockTasks)) {
-      const key = `${data.date}__block__${blockId}`
-      updatedTasks[key] = tasks.map((t) => dataToTask(t, data.date))
+
+    // Remove existing block task keys for this date
+    const blockPrefix = `${data.date}__block__`
+    for (const key of Object.keys(updatedTasks)) {
+      if (key.startsWith(blockPrefix)) {
+        delete updatedTasks[key]
+      }
+    }
+
+    // Add block tasks from external data
+    if (data.blockTasks) {
+      for (const [blockId, tasks] of Object.entries(data.blockTasks)) {
+        const key = `${data.date}__block__${blockId}`
+        updatedTasks[key] = tasks.map((t) => dataToTask(t, data.date))
+      }
     }
     useTaskStore.setState({ tasks: updatedTasks })
+  } finally {
+    applyingExternal = false
   }
 }
 
