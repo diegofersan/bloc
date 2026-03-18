@@ -1,3 +1,8 @@
+/**
+ * Markdown serializer/deserializer for Bloc day files.
+ * Ported from src/main/services/markdownSerializer.ts to be 100% compatible.
+ */
+
 export interface TaskData {
   id: string
   text: string
@@ -245,13 +250,7 @@ function parseTasksSection(lines: string[]): TaskData[] {
   return tasks
 }
 
-interface ParsedDistraction {
-  status: DistractionStatus
-  text: string
-  meta: Record<string, string>
-}
-
-function parseDistractionLine(line: string): ParsedDistraction | null {
+function parseDistractionLine(line: string): { status: DistractionStatus; text: string; meta: Record<string, string> } | null {
   const match = line.match(/^- \[(pending|dismissed|converted)\] (.+)$/)
   if (!match) return null
   const status = match[1] as DistractionStatus

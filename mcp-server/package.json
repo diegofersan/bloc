@@ -1,0 +1,40 @@
+{
+  "name": "bloc-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Bloc — access your time blocks, tasks and productivity data from Claude",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "bloc-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "bloc",
+    "productivity",
+    "time-blocking",
+    "pomodoro"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/diegofersan/bloc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.0"
+  }
+}

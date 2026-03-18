@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bloc": {
+      "command": "node",
+      "args": ["/Users/dgfrsn/Dev/bloc/mcp-server/dist/index.js"],
+      "env": {
+        "BLOC_DEV": "true"
+      }
+    }
+  }
+}
