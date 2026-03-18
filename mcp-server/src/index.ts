@@ -48,18 +48,18 @@ function getWeekDates(dateStr: string): string[] {
   return dates
 }
 
-/** Convert "HH:MM" to ms from midnight. Throws on invalid input. */
-function timeToMs(time: string): number {
+/** Convert "HH:MM" to minutes from midnight. Throws on invalid input. */
+function timeToMinutes(time: string): number {
   const match = time.match(/^(\d{1,2}):(\d{2})$/)
   if (!match) throw new Error(`Invalid time format "${time}" — expected HH:MM (e.g. "09:30", "14:00")`)
   const h = Number(match[1])
   const m = Number(match[2])
   if (h < 0 || h > 23) throw new Error(`Invalid hour ${h} — must be 0-23`)
   if (m < 0 || m > 59) throw new Error(`Invalid minute ${m} — must be 0-59`)
-  return (h * 60 + m) * 60 * 1000
+  return h * 60 + m
 }
 
-const MIN_BLOCK_DURATION_MS = 15 * 60 * 1000 // 15 minutes
+const MIN_BLOCK_DURATION = 15 // 15 minutes
 const EARLIEST_HOUR = 6  // 06:00
 const LATEST_HOUR = 23   // 23:00
 
@@ -119,8 +119,8 @@ function formatDaySummary(data: DayFileData): string {
   if (data.timeBlocks && data.timeBlocks.length > 0) {
     lines.push('## Time Blocks')
     for (const b of data.timeBlocks) {
-      const start = msToTime(b.startTime)
-      const end = msToTime(b.endTime)
+      const start = minutesToTime(b.startTime)
+      const end = minutesToTime(b.endTime)
       lines.push(`- ${start}-${end} ${b.title} [${b.color}] (id: ${b.id})`)
     }
     lines.push('')
@@ -151,10 +151,9 @@ function formatTaskSummary(task: TaskData, indent: number): string {
   return line
 }
 
-function msToTime(ms: number): string {
-  const totalMinutes = Math.floor(ms / 60000)
-  const h = Math.floor(totalMinutes / 60)
-  const m = totalMinutes % 60
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
@@ -361,18 +360,18 @@ IMPORTANT RULES — read carefully:
     color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)')
   },
   async ({ date, title, start_time, end_time, color }) => {
-    // Validate times
-    let startMs: number, endMs: number
+    // Validate times — stored as minutes from midnight (not milliseconds)
+    let startMin: number, endMin: number
     try {
-      startMs = timeToMs(start_time)
-      endMs = timeToMs(end_time)
+      startMin = timeToMinutes(start_time)
+      endMin = timeToMinutes(end_time)
     } catch (e: any) {
       return { content: [{ type: 'text', text: e.message }], isError: true }
     }
 
     // Reject blocks outside working hours (00:00–06:00)
-    const startHour = startMs / 3600000
-    const endHour = endMs / 3600000
+    const startHour = startMin / 60
+    const endHour = endMin / 60
     if (startHour < EARLIEST_HOUR) {
       return {
         content: [{ type: 'text', text: `Start time ${start_time} is before 06:00. Blocks must be between 06:00 and 23:00. Did you mean a different time?` }],
@@ -386,16 +385,16 @@ IMPORTANT RULES — read carefully:
       }
     }
 
-    if (endMs <= startMs) {
+    if (endMin <= startMin) {
       return {
         content: [{ type: 'text', text: `End time (${end_time}) must be after start time (${start_time})` }],
         isError: true
       }
     }
 
-    if (endMs - startMs < MIN_BLOCK_DURATION_MS) {
+    if (endMin - startMin < MIN_BLOCK_DURATION) {
       return {
-        content: [{ type: 'text', text: `Block duration must be at least 15 minutes. Got ${start_time}-${end_time} (${(endMs - startMs) / 60000}min)` }],
+        content: [{ type: 'text', text: `Block duration must be at least 15 minutes. Got ${start_time}-${end_time} (${endMin - startMin}min)` }],
         isError: true
       }
     }
@@ -404,12 +403,12 @@ IMPORTANT RULES — read carefully:
     if (!data.timeBlocks) data.timeBlocks = []
 
     // Check for overlaps
-    const overlapping = data.timeBlocks.find(b => blocksOverlap(startMs, endMs, b.startTime, b.endTime))
+    const overlapping = data.timeBlocks.find(b => blocksOverlap(startMin, endMin, b.startTime, b.endTime))
     if (overlapping) {
       return {
         content: [{
           type: 'text',
-          text: `Time conflict: "${title}" (${start_time}-${end_time}) overlaps with existing block "${overlapping.title}" (${msToTime(overlapping.startTime)}-${msToTime(overlapping.endTime)}). Use read_day to see all existing blocks, then choose a free slot.`
+          text: `Time conflict: "${title}" (${start_time}-${end_time}) overlaps with existing block "${overlapping.title}" (${minutesToTime(overlapping.startTime)}-${minutesToTime(overlapping.endTime)}). Use read_day to see all existing blocks, then choose a free slot.`
         }],
         isError: true
       }
@@ -419,8 +418,8 @@ IMPORTANT RULES — read carefully:
     const block: TimeBlockData = {
       id: uuidv4(),
       title,
-      startTime: startMs,
-      endTime: endMs,
+      startTime: startMin,
+      endTime: endMin,
       color: (color as TimeBlockColor) ?? 'indigo',
       createdAt: now,
       updatedAt: now
@@ -464,8 +463,8 @@ server.tool(
     let newStart = block.startTime
     let newEnd = block.endTime
     try {
-      if (start_time !== undefined) newStart = timeToMs(start_time)
-      if (end_time !== undefined) newEnd = timeToMs(end_time)
+      if (start_time !== undefined) newStart = timeToMinutes(start_time)
+      if (end_time !== undefined) newEnd = timeToMinutes(end_time)
     } catch (e: any) {
       return { content: [{ type: 'text', text: e.message }], isError: true }
     }
@@ -477,7 +476,7 @@ server.tool(
       }
     }
 
-    if (newEnd - newStart < MIN_BLOCK_DURATION_MS) {
+    if (newEnd - newStart < MIN_BLOCK_DURATION) {
       return {
         content: [{ type: 'text', text: `Block duration must be at least 15 minutes` }],
         isError: true
@@ -493,7 +492,7 @@ server.tool(
         return {
           content: [{
             type: 'text',
-            text: `Time conflict: updated times overlap with "${overlapping.title}" (${msToTime(overlapping.startTime)}-${msToTime(overlapping.endTime)})`
+            text: `Time conflict: updated times overlap with "${overlapping.title}" (${minutesToTime(overlapping.startTime)}-${minutesToTime(overlapping.endTime)})`
           }],
           isError: true
         }
@@ -619,7 +618,7 @@ server.tool(
       if (data.timeBlocks) {
         totalBlocks += data.timeBlocks.length
         for (const b of data.timeBlocks) {
-          totalBlockMinutes += (b.endTime - b.startTime) / 60000
+          totalBlockMinutes += b.endTime - b.startTime
         }
       }
     }
