@@ -93,6 +93,8 @@ function removeTask(tasks: TaskData[], taskId: string): boolean {
 function formatDaySummary(data: DayFileData): string {
   const lines: string[] = []
   lines.push(`# ${data.date}`)
+  const now = new Date()
+  lines.push(`Current time: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`)
   lines.push(`Pomodoros: ${data.pomodoros}`)
   lines.push('')
 
@@ -156,10 +158,25 @@ function msToTime(ms: number): string {
 
 // --- MCP Server ---
 
-const server = new McpServer({
-  name: 'bloc',
-  version: '1.0.0'
-})
+const server = new McpServer(
+  {
+    name: 'bloc',
+    version: '1.0.0'
+  },
+  {
+    instructions: `Bloc is a daily time-blocking and productivity app. Time blocks represent scheduled work periods on a visual timeline.
+
+CRITICAL RULES for time blocks:
+1. ALWAYS call read_day BEFORE creating or modifying blocks — you need to see what already exists to avoid conflicts.
+2. Times use 24h HH:MM format. Typical working hours are 07:00–22:00. NEVER create blocks at 00:00 unless the user explicitly asks for midnight.
+3. Each block needs a meaningful title — never leave it empty or "Sem título".
+4. Blocks CANNOT overlap. If a slot is taken, choose a different time.
+5. When the user asks to schedule something without specifying a time, ask them what time they want — do NOT guess or default to 00:00.
+6. When the user asks to delete or modify a block, call read_day first to get the block ID.
+
+The user's locale is Portuguese (PT).`
+  }
+)
 
 // list_days
 server.tool(
