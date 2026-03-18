@@ -60,6 +60,8 @@ function timeToMs(time: string): number {
 }
 
 const MIN_BLOCK_DURATION_MS = 15 * 60 * 1000 // 15 minutes
+const EARLIEST_HOUR = 6  // 06:00
+const LATEST_HOUR = 23   // 23:00
 
 /** Check if two time ranges overlap */
 function blocksOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
@@ -343,12 +345,19 @@ server.tool(
 // create_time_block
 server.tool(
   'create_time_block',
-  'Create a new time block on the user\'s daily timeline. IMPORTANT: Before creating blocks, call read_day first to check existing blocks and avoid overlaps. Each block must have a title, and times must not overlap with existing blocks. Minimum block duration is 15 minutes.',
+  `Create a new time block on the user's daily timeline.
+
+IMPORTANT RULES — read carefully:
+- You MUST call read_day first to check existing blocks and available slots.
+- start_time and end_time are CLOCK TIMES in HH:MM 24-hour format, e.g. "09:00" means 9 AM, "14:30" means 2:30 PM.
+- Blocks must be within working hours (06:00 to 23:00). Blocks at 00:00–06:00 are rejected.
+- If the user does not specify a time, ASK them — do NOT guess or use 00:00.
+- Minimum block duration is 15 minutes. Blocks cannot overlap.`,
   {
     date: z.string().describe('Date in YYYY-MM-DD format'),
     title: z.string().min(1).describe('Block title — must not be empty'),
-    start_time: z.string().describe('Start time in HH:MM 24h format (e.g. "09:00", "14:30")'),
-    end_time: z.string().describe('End time in HH:MM 24h format (e.g. "10:30", "16:00"). Must be after start_time.'),
+    start_time: z.string().regex(/^\d{2}:\d{2}$/).describe('Start CLOCK TIME in HH:MM 24h format. Example: "09:00" for 9 AM, "14:30" for 2:30 PM. NOT milliseconds, NOT minutes — a clock time.'),
+    end_time: z.string().regex(/^\d{2}:\d{2}$/).describe('End CLOCK TIME in HH:MM 24h format. Example: "10:30" for 10:30 AM, "16:00" for 4 PM. Must be after start_time.'),
     color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)')
   },
   async ({ date, title, start_time, end_time, color }) => {
@@ -359,6 +368,22 @@ server.tool(
       endMs = timeToMs(end_time)
     } catch (e: any) {
       return { content: [{ type: 'text', text: e.message }], isError: true }
+    }
+
+    // Reject blocks outside working hours (00:00–06:00)
+    const startHour = startMs / 3600000
+    const endHour = endMs / 3600000
+    if (startHour < EARLIEST_HOUR) {
+      return {
+        content: [{ type: 'text', text: `Start time ${start_time} is before 06:00. Blocks must be between 06:00 and 23:00. Did you mean a different time?` }],
+        isError: true
+      }
+    }
+    if (endHour > LATEST_HOUR + 1) { // allow end at 23:59
+      return {
+        content: [{ type: 'text', text: `End time ${end_time} is after 23:59. Blocks must be between 06:00 and 23:00.` }],
+        isError: true
+      }
     }
 
     if (endMs <= startMs) {
@@ -420,8 +445,8 @@ server.tool(
     date: z.string().describe('Date in YYYY-MM-DD format'),
     block_id: z.string().describe('Block ID'),
     title: z.string().optional().describe('New title'),
-    start_time: z.string().optional().describe('New start time in HH:MM 24h format (e.g. "09:00")'),
-    end_time: z.string().optional().describe('New end time in HH:MM 24h format (e.g. "10:30")'),
+    start_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe('New start CLOCK TIME in HH:MM 24h format (e.g. "09:00")'),
+    end_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe('New end CLOCK TIME in HH:MM 24h format (e.g. "10:30")'),
     color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('New color')
   },
   async ({ date, block_id, title, start_time, end_time, color }) => {
