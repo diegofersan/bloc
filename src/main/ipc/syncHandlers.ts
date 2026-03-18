@@ -18,19 +18,13 @@ function stopPolling(): void {
     clearInterval(pollingInterval)
     pollingInterval = null
   }
-  watchedDates = []
-  lastKnownMtimes.clear()
 }
 
 function startPolling(): void {
-  stopPolling()
-
-  // Snapshot current mtimes
-  for (const date of watchedDates) {
-    const mtime = getFileMtime(date)
-    if (mtime !== null) {
-      lastKnownMtimes.set(date, mtime)
-    }
+  // Stop existing interval but keep watchedDates and mtimes
+  if (pollingInterval) {
+    clearInterval(pollingInterval)
+    pollingInterval = null
   }
 
   pollingInterval = setInterval(() => {
@@ -110,6 +104,8 @@ export function registerSyncHandlers(): void {
 
   ipcMain.handle('icloud:stop-watching', () => {
     stopPolling()
+    watchedDates = []
+    lastKnownMtimes.clear()
     return true
   })
 }
