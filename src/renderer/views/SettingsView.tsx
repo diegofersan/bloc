@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2, FlaskConical, Eraser, Boxes } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { format, addDays } from 'date-fns'
+import { format, addDays, formatDistanceToNow } from 'date-fns'
+import { pt } from 'date-fns/locale'
 import { useSettingsStore, formatTzOffset, type AIProvider } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useSiteBlockerStore } from '../stores/siteBlockerStore'
@@ -46,6 +47,9 @@ export default function SettingsView() {
     isConnected: gcalConnected,
     selectedCalendarId,
     calendars: gcalCalendars,
+    lastSyncAt,
+    syncError,
+    isSyncing,
     setConnected: setGcalConnected,
     setSelectedCalendar,
     setCalendars: setGcalCalendars,
@@ -487,6 +491,9 @@ export default function SettingsView() {
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-success" />
                     <span className="text-sm text-text-secondary font-medium">Conta ligada</span>
+                    {isSyncing && (
+                      <RefreshCw size={12} className="text-text-muted animate-spin" />
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     <motion.button
@@ -510,6 +517,16 @@ export default function SettingsView() {
                     </motion.button>
                   </div>
                 </div>
+
+                {/* Sync status */}
+                {lastSyncAt && (
+                  <p className="text-xs text-text-muted mb-2">
+                    Última sync: {formatDistanceToNow(lastSyncAt, { addSuffix: true, locale: pt })}
+                  </p>
+                )}
+                {syncError && (
+                  <p className="text-xs text-red-500 mb-2">{syncError}</p>
+                )}
 
                 {/* Calendar picker */}
                 {gcalCalendars.length > 0 && (

@@ -14,11 +14,15 @@ interface GoogleCalendarState {
   calendars: GoogleCalendarInfo[]
   syncToken: string | null
   lastSyncAt: number | null
+  syncError: string | null
+  isSyncing: boolean
   setConnected: (connected: boolean) => void
   setSelectedCalendar: (calendarId: string | null) => void
   setCalendars: (calendars: GoogleCalendarInfo[]) => void
   setSyncToken: (token: string | null) => void
   setLastSyncAt: (time: number | null) => void
+  setSyncError: (error: string | null) => void
+  setIsSyncing: (syncing: boolean) => void
   reset: () => void
 }
 
@@ -30,6 +34,8 @@ export const useGoogleCalendarStore = create<GoogleCalendarState>()(
       calendars: [],
       syncToken: null,
       lastSyncAt: null,
+      syncError: null,
+      isSyncing: false,
 
       setConnected: (connected) => set({ isConnected: connected }),
 
@@ -41,18 +47,31 @@ export const useGoogleCalendarStore = create<GoogleCalendarState>()(
 
       setLastSyncAt: (time) => set({ lastSyncAt: time }),
 
+      setSyncError: (error) => set({ syncError: error }),
+
+      setIsSyncing: (syncing) => set({ isSyncing: syncing }),
+
       reset: () =>
         set({
           isConnected: false,
           selectedCalendarId: null,
           calendars: [],
           syncToken: null,
-          lastSyncAt: null
+          lastSyncAt: null,
+          syncError: null,
+          isSyncing: false
         })
     }),
     {
       name: 'bloc-google-calendar',
-      version: 1
+      version: 1,
+      partialize: (state) => ({
+        isConnected: state.isConnected,
+        selectedCalendarId: state.selectedCalendarId,
+        calendars: state.calendars,
+        syncToken: state.syncToken,
+        lastSyncAt: state.lastSyncAt
+      })
     }
   )
 )

@@ -106,7 +106,13 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenData> {
 
   if (!res.ok) {
     const err = await res.text()
-    throw new Error(`Token refresh failed: ${err}`)
+    // If refresh token was revoked or is invalid, clear stored tokens
+    // to prevent infinite retry loops
+    if (res.status === 400 || res.status === 401) {
+      console.warn('[google-auth] Refresh token revoked or invalid — clearing stored tokens')
+      clearTokens()
+    }
+    throw new Error(`Token refresh failed (${res.status}): ${err}`)
   }
 
   const data = await res.json()

@@ -2,6 +2,8 @@ import { useTimeBlockStore, type TimeBlock, type TimeBlockColor } from '../store
 import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns'
 
+const LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
+
 interface GCalEvent {
   id: string
   summary: string
@@ -33,7 +35,16 @@ function dateTimeToMinutes(dateTime: string): number {
 function minutesToDateTime(date: string, minutes: number): string {
   const d = parseISO(date)
   d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0)
-  return d.toISOString()
+  // Format with local timezone offset instead of UTC 'Z'
+  const pad = (n: number): string => String(n).padStart(2, '0')
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? '+' : '-'
+  const absOff = Math.abs(off)
+  const offStr = `${sign}${pad(Math.floor(absOff / 60))}:${pad(absOff % 60)}`
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${offStr}`
+  )
 }
 
 function eventToTimeBlock(event: GCalEvent, date: string): TimeBlock | null {
@@ -63,8 +74,8 @@ async function pushLocalBlocksToGcal(date: string, calendarId: string): Promise<
     try {
       const result = await window.bloc?.gcal.createEvent(calendarId, {
         summary: block.title,
-        start: { dateTime: minutesToDateTime(date, block.startTime) },
-        end: { dateTime: minutesToDateTime(date, block.endTime) }
+        start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
       })
 
       if (result?.success && result.event) {
@@ -100,8 +111,8 @@ async function pushUpdatedBlocksToGcal(date: string, calendarId: string): Promis
     try {
       await window.bloc?.gcal.updateEvent(calendarId, gcalId, {
         summary: block.title,
-        start: { dateTime: minutesToDateTime(date, block.startTime) },
-        end: { dateTime: minutesToDateTime(date, block.endTime) }
+        start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
       })
       lastPushedAt.set(gcalId, Date.now())
     } catch (err) {
@@ -220,22 +231,47 @@ export async function syncDate(date: string): Promise<void> {
     return
   }
 
-  console.log('[gcal-sync] syncDate started for', date, 'calendar:', selectedCalendarId)
+  // Verify auth is still valid on the main process side
+  try {
+    const authenticated = await window.bloc?.gcal.isAuthenticated()
+    if (!authenticated) {
+      console.warn('[gcal-sync] Auth token no longer valid — disconnecting')
+      useGoogleCalendarStore.getState().reset()
+      return
+    }
+  } catch (err) {
+    console.error('[gcal-sync] Auth check failed:', err)
+    useGoogleCalendarStore.getState().reset()
+    return
+  }
 
-  // Process pending deletes first
-  await processPendingDeletes(selectedCalendarId)
+  useGoogleCalendarStore.getState().setIsSyncing(true)
 
-  // Pull remote changes
-  await pullEventsFromGcal(date, selectedCalendarId)
+  try {
+    console.log('[gcal-sync] syncDate started for', date, 'calendar:', selectedCalendarId)
 
-  // Push local-only blocks
-  await pushLocalBlocksToGcal(date, selectedCalendarId)
+    // Process pending deletes first
+    await processPendingDeletes(selectedCalendarId)
 
-  // Push updated local blocks
-  await pushUpdatedBlocksToGcal(date, selectedCalendarId)
+    // Pull remote changes
+    await pullEventsFromGcal(date, selectedCalendarId)
 
-  useGoogleCalendarStore.getState().setLastSyncAt(Date.now())
-  console.log('[gcal-sync] syncDate completed for', date)
+    // Push local-only blocks
+    await pushLocalBlocksToGcal(date, selectedCalendarId)
+
+    // Push updated local blocks
+    await pushUpdatedBlocksToGcal(date, selectedCalendarId)
+
+    useGoogleCalendarStore.getState().setSyncError(null)
+    useGoogleCalendarStore.getState().setLastSyncAt(Date.now())
+    console.log('[gcal-sync] syncDate completed for', date)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Sync failed unexpectedly'
+    console.error('[gcal-sync] syncDate failed for', date, ':', err)
+    useGoogleCalendarStore.getState().setSyncError(message)
+  } finally {
+    useGoogleCalendarStore.getState().setIsSyncing(false)
+  }
 }
 
 export async function syncAllVisibleDates(): Promise<void> {
@@ -328,8 +364,8 @@ function setupReactivePush(): void {
           try {
             await window.bloc?.gcal.updateEvent(calId, googleEventId, {
               summary: block.title,
-              start: { dateTime: minutesToDateTime(date, block.startTime) },
-              end: { dateTime: minutesToDateTime(date, block.endTime) }
+              start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+              end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
             })
             lastPushedAt.set(googleEventId, Date.now())
           } catch (err) {

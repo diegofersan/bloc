@@ -44,7 +44,7 @@ export async function listCalendars(): Promise<GoogleCalendar[]> {
   if (!res.ok) throw new Error(`Failed to list calendars: ${res.status}`)
   const data = await res.json()
   const all: GoogleCalendar[] = data.items || []
-  return all.filter((c) => c.accessRole === 'owner')
+  return all.filter((c) => c.accessRole === 'owner' || c.accessRole === 'writer')
 }
 
 export async function listEvents(
