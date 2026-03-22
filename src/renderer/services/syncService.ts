@@ -68,6 +68,7 @@ function taskToData(task: Task): TaskData {
     text: task.text,
     completed: task.completed,
     completedAt: task.completedAt,
+    estimatedMinutes: task.estimatedMinutes,
     createdAt: task.createdAt,
     subtasks: task.subtasks.map(taskToData),
     references: task.references
@@ -80,6 +81,7 @@ function dataToTask(data: TaskData, date: string): Task {
     text: data.text,
     completed: data.completed,
     completedAt: data.completedAt,
+    estimatedMinutes: data.estimatedMinutes,
     createdAt: data.createdAt,
     date,
     subtasks: data.subtasks.map((st) => dataToTask(st, date)),

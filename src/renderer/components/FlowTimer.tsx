@@ -23,7 +23,7 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
   const tick = useFlowStore((s) => s.tick)
   const pause = useFlowStore((s) => s.pause)
   const resume = useFlowStore((s) => s.resume)
-  const deactivate = useFlowStore((s) => s.deactivate)
+  const stop = useFlowStore((s) => s.stop)
   const skipCurrentTask = useFlowStore((s) => s.skipCurrentTask)
   const secondsRemaining = useFlowStore((s) => s.secondsRemaining)
   const completedPomodoros = useFlowStore((s) => s.completedPomodoros)
@@ -155,7 +155,7 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
           )}
         </button>
         <button
-          onClick={deactivate}
+          onClick={stop}
           className="p-1.5 rounded hover:bg-bg-hover transition-colors"
           aria-label="Parar fluxo"
           title="Parar"

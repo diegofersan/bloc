@@ -47,6 +47,7 @@ interface FlowState {
 
   activate: (date: string, blockId: string) => void
   start: () => void
+  stop: () => void
   deactivate: () => void
   tick: () => void
   completeCurrentTask: () => void
@@ -156,23 +157,60 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
     const { isActive, started, queue } = get()
     if (!isActive || started || queue.length === 0) return
 
+    // Find the first pending task (may not be index 0 if some were already worked on)
+    const nextIndex = queue.findIndex((q) => q.status === 'pending')
+    if (nextIndex === -1) return
+
     const newQueue = [...queue]
-    newQueue[0] = { ...newQueue[0], status: 'active' }
+    newQueue[nextIndex] = { ...newQueue[nextIndex], status: 'active' }
 
     const workSeconds = getWorkSeconds()
     const now = Date.now()
+    // Restore accumulated time from previous session
+    const accumulated = newQueue[nextIndex].timeSpentSeconds
 
     set({
       started: true,
       queue: newQueue,
-      currentIndex: 0,
+      currentIndex: nextIndex,
       phase: 'working',
       secondsRemaining: workSeconds,
       totalSeconds: workSeconds,
       startedAt: now,
       expectedEndAt: now + workSeconds * 1000,
       taskTimerStartedAt: now,
-      taskAccumulatedSeconds: 0
+      taskAccumulatedSeconds: accumulated
+    })
+  },
+
+  stop: () => {
+    const { isActive, started, currentIndex, queue } = get()
+    if (!isActive || !started) return
+
+    // Persist elapsed time on the active item
+    const newQueue = [...queue]
+    if (currentIndex >= 0 && currentIndex < newQueue.length) {
+      const elapsed = get().getTaskElapsedSeconds()
+      newQueue[currentIndex] = {
+        ...newQueue[currentIndex],
+        status: 'pending',
+        timeSpentSeconds: elapsed
+      }
+    }
+
+    set({
+      started: false,
+      isPaused: false,
+      queue: newQueue,
+      currentIndex: -1,
+      phase: 'working',
+      secondsRemaining: 0,
+      totalSeconds: 0,
+      startedAt: null,
+      expectedEndAt: null,
+      taskTimerStartedAt: null,
+      taskAccumulatedSeconds: 0,
+      lastCascadedMinutes: 0
     })
   },
 

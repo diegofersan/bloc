@@ -5,7 +5,6 @@ import { useFlowStore } from '../stores/flowStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useTimeBlockStore } from '../stores/timeBlockStore'
 import { formatEstimate } from '../utils/taskEstimates'
-import { START_HOUR } from './TimeBlockItem'
 import { useSettingsStore, formatTzOffset, getTzOffsetMinutes } from '../stores/settingsStore'
 import type { TimeBlock } from '../stores/timeBlockStore'
 import type { Task } from '../stores/taskStore'
@@ -13,21 +12,17 @@ import type { Task } from '../stores/taskStore'
 const EMPTY_BLOCKS: TimeBlock[] = []
 const EMPTY_TASKS: Task[] = []
 
-function formatBlockTime(minutes: number): string {
+function formatTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-function formatHour(h: number): string {
-  return String(h).padStart(2, '0')
-}
-
-// Same visual order as TimelineGrid: 01, 02, ..., 23, 00
+// Match timeline grid constants
+const START_HOUR = 1
+const HOUR_HEIGHT = 120 // taller than main timeline (60) for better task readability
 const HOURS_ORDER = Array.from({ length: 24 }, (_, i) => (i + START_HOUR) % 24)
-
-// Zoomed grid: ~2 hours visible per screen height (~600px)
-const HOUR_HEIGHT = 300
+const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT
 
 function timeToY(minutes: number): number {
   const shifted = ((minutes - START_HOUR * 60) + 1440) % 1440
@@ -57,18 +52,23 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const started = useFlowStore((s) => s.started)
   const startFlow = useFlowStore((s) => s.start)
   const deactivate = useFlowStore((s) => s.deactivate)
-  const secondsRemaining = useFlowStore((s) => s.secondsRemaining)
   const taskTimerStartedAt = useFlowStore((s) => s.taskTimerStartedAt)
   const taskAccumulatedSeconds = useFlowStore((s) => s.taskAccumulatedSeconds)
   const allTasks = useTaskStore((s) => s.tasks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const blocks = allBlocks[date] ?? EMPTY_BLOCKS
 
-  // Flow block info (single block mode)
+  // Flow block info
   const flowBlockId = useFlowStore((s) => s.blockId)
   const flowBlock = blocks.find((b) => b.id === flowBlockId) || null
   const blockColor = flowBlock ? BLOCK_COLORS[flowBlock.color] || BLOCK_COLORS.indigo : '#94a3b8'
   const blockKey = flowBlockId ? `${date}__block__${flowBlockId}` : ''
+
+  // Other blocks (not the flow block) to show as context
+  const otherBlocks = useMemo(() =>
+    blocks.filter((b) => b.id !== flowBlockId).sort((a, b) => a.startTime - b.startTime),
+    [blocks, flowBlockId]
+  )
 
   // Indexed queue items
   const indexedQueue = useMemo(() =>
@@ -80,8 +80,10 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const completed = queue.filter((q) => q.status === 'completed').length
   const total = queue.length
 
+  // Block actions
+  const updateBlock = useTimeBlockStore((s) => s.updateBlock)
 
-  // Hooks for running view (must be before any early return)
+  // Task actions
   const toggleTask = useTaskStore((s) => s.toggleTask)
   const updateTaskEstimate = useTaskStore((s) => s.updateTaskEstimate)
   const addTask = useTaskStore((s) => s.addTask)
@@ -92,10 +94,8 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const estimateInputRef = useRef<HTMLInputElement>(null)
   const taskRef = useRef<HTMLInputElement>(null)
 
-  const currentItem = currentIndex >= 0 && currentIndex < queue.length ? queue[currentIndex] : null
   const addTaskBlockKey = blockKey || `${date}__block__${blocks[0]?.id || ''}`
 
-  // Focus estimate input when editing
   useEffect(() => {
     if (editingEstimateId && estimateInputRef.current) {
       estimateInputRef.current.focus()
@@ -105,7 +105,6 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
 
   const handleToggleTask = useCallback((blockKey: string, taskId: string) => {
     toggleTask(blockKey, taskId)
-    // Flow auto-advance is handled by the taskStore subscription in flowStore
   }, [toggleTask])
 
   const handleEstimateClick = useCallback((taskId: string, currentMinutes: number | null) => {
@@ -117,7 +116,6 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     const val = parseInt(estimateInput, 10)
     if (!isNaN(val) && val > 0) {
       updateTaskEstimate(blockKey, taskId, val)
-      // Also update in flow queue
       const flowState = useFlowStore.getState()
       const newQueue = flowState.queue.map((q) =>
         q.taskId === taskId && q.blockKey === blockKey ? { ...q, estimatedMinutes: val } : q
@@ -133,13 +131,11 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     if (!trimmed) return
     addTask(addTaskBlockKey, trimmed)
 
-    // Find the newly added task (last in the block's task list)
     const blockTasks = useTaskStore.getState().tasks[addTaskBlockKey] || []
     const newTask = blockTasks[blockTasks.length - 1]
     if (newTask) {
       const flowState = useFlowStore.getState()
       const newQueue = [...flowState.queue]
-      // Insert at the end of the queue (all tasks are from the same block)
       newQueue.push({
         taskId: newTask.id,
         blockKey: addTaskBlockKey,
@@ -148,7 +144,6 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
         timeSpentSeconds: 0,
         status: 'pending'
       })
-
       useFlowStore.setState({ queue: newQueue })
     }
 
@@ -156,21 +151,19 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     setShowAddTask(false)
   }, [taskText, addTaskBlockKey, addTask, flowBlockId])
 
-
-  // Task elapsed (needed in running view)
+  // Task elapsed
   const taskElapsed = taskTimerStartedAt
     ? taskAccumulatedSeconds + Math.floor((Date.now() - taskTimerStartedAt) / 1000)
     : taskAccumulatedSeconds
 
   const MIN_TASK_HEIGHT = 32
   const DEFAULT_TASK_MINUTES = 15
-  const totalGridHeight = 24 * HOUR_HEIGHT + HOUR_HEIGHT / 2
 
   const { primaryTimezone, secondaryTimezone } = useSettingsStore()
   const hasSecondary = secondaryTimezone !== null
   const totalGutter = hasSecondary ? GUTTER_WIDTH + SECONDARY_GUTTER : GUTTER_WIDTH
 
-  // Current time
+  // Current time indicator
   const [currentMinutes, setCurrentMinutes] = useState(() => {
     const now = new Date()
     return now.getHours() * 60 + now.getMinutes()
@@ -183,16 +176,159 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     return () => clearInterval(id)
   }, [])
 
-  // Auto-scroll to first block on mount
+  // Auto-scroll to flow block on mount
   const scrollRef = useRef<HTMLDivElement>(null)
   const didScrollRef = useRef(false)
   useEffect(() => {
-    if (didScrollRef.current || !scrollRef.current || blocks.length === 0) return
-    const sorted = [...blocks].sort((a, b) => a.startTime - b.startTime)
-    const firstBlockY = timeToY(sorted[0].startTime)
-    scrollRef.current.scrollTop = Math.max(0, firstBlockY - 20)
+    if (didScrollRef.current || !scrollRef.current || !flowBlock) return
+    const blockY = timeToY(flowBlock.startTime)
+    scrollRef.current.scrollTop = Math.max(0, blockY - 40)
     didScrollRef.current = true
-  }, [blocks])
+  }, [flowBlock])
+
+  // Drag to move flow block
+  const SNAP_MINUTES = 5
+  const isDraggingBlock = useRef(false)
+
+  const handleBlockDragStart = useCallback((e: React.MouseEvent) => {
+    if (!flowBlock || !scrollRef.current) return
+    e.preventDefault()
+    isDraggingBlock.current = true
+    const startY = e.clientY
+    const startScrollTop = scrollRef.current.scrollTop
+    const duration = flowBlock.endTime - flowBlock.startTime
+    const startTime = flowBlock.startTime
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDraggingBlock.current || !scrollRef.current) return
+      const scrollDelta = scrollRef.current.scrollTop - startScrollTop
+      const deltaY = ev.clientY - startY + scrollDelta
+      const deltaMinutes = (deltaY / HOUR_HEIGHT) * 60
+      let newStart = startTime + deltaMinutes
+      // Snap
+      newStart = Math.round(newStart / SNAP_MINUTES) * SNAP_MINUTES
+      // Clamp to day
+      newStart = Math.max(0, Math.min(1440 - duration, newStart))
+      const newEnd = newStart + duration
+      updateBlock(date, flowBlock.id, { startTime: newStart, endTime: newEnd })
+    }
+
+    const onMouseUp = () => {
+      isDraggingBlock.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [flowBlock, date, updateBlock])
+
+  // Render a task item
+  function renderTaskItem(item: typeof indexedQueue[0]) {
+    const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
+    const task = blockTasks.find((t) => t.id === item.taskId)
+    if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
+    const taskLabel = task?.text || 'Tarefa'
+    const isItemActive = item.index === currentIndex
+    const isCompleted = item.status === 'completed' || task?.completed
+
+    // Time spent: live elapsed for active, persisted for stopped
+    const itemElapsed = isItemActive ? taskElapsed : item.timeSpentSeconds
+
+    let estimateLabel: string | null = null
+    if (item.estimatedMinutes && itemElapsed > 0) {
+      const remainingSec = Math.max(0, item.estimatedMinutes * 60 - itemElapsed)
+      const remainingMin = Math.ceil(remainingSec / 60)
+      estimateLabel = remainingMin > 0 ? formatEstimate(remainingMin) : '0m'
+    }
+
+    // BG opacity: starts at 20%, grows with progress toward estimate
+    let bgOpacity = '20'
+    if (isCompleted) {
+      bgOpacity = '08'
+    } else if (itemElapsed > 0 && item.estimatedMinutes) {
+      const progress = Math.min(itemElapsed / (item.estimatedMinutes * 60), 1)
+      const hex = Math.round(0x20 + progress * (0x60 - 0x20)).toString(16).padStart(2, '0')
+      bgOpacity = hex
+    } else if (itemElapsed > 0) {
+      bgOpacity = '35'
+    }
+
+    const mins = item.estimatedMinutes ?? DEFAULT_TASK_MINUTES
+    const itemHeight = Math.max((mins / 60) * HOUR_HEIGHT, MIN_TASK_HEIGHT)
+
+    return (
+      <div
+        key={`${item.blockId}-${item.taskId}`}
+        className={`flex items-start gap-2 px-2 pt-1.5 rounded-lg transition-colors ${
+          isCompleted ? 'opacity-40' : ''
+        }`}
+        style={{
+          minHeight: itemHeight,
+          backgroundColor: blockColor + bgOpacity
+        }}
+      >
+        {/* Checkbox */}
+        <button
+          className="shrink-0"
+          onClick={() => !isCompleted && handleToggleTask(item.blockKey, item.taskId)}
+        >
+          {isCompleted ? (
+            <Check size={14} className="text-success" />
+          ) : isItemActive ? (
+            <Circle size={14} className="text-violet-500 fill-violet-500 hover:text-success cursor-pointer" />
+          ) : (
+            <Circle size={14} className="text-border hover:text-success cursor-pointer" />
+          )}
+        </button>
+
+        {/* Task name */}
+        <span className={`flex-1 text-sm truncate ${
+          isCompleted
+            ? 'line-through text-text-muted'
+            : isItemActive
+              ? 'text-text-primary font-medium'
+              : 'text-text-secondary'
+        }`}>
+          {taskLabel}
+        </span>
+
+        {/* Estimate */}
+        {editingEstimateId === item.taskId ? (
+          <input
+            ref={estimateInputRef}
+            type="text"
+            value={estimateInput}
+            onChange={(e) => setEstimateInput(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => handleEstimateCommit(item.blockKey, item.taskId)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleEstimateCommit(item.blockKey, item.taskId)
+              if (e.key === 'Escape') { setEditingEstimateId(null); setEstimateInput('') }
+            }}
+            placeholder="min"
+            className="w-10 text-[10px] text-center bg-bg-secondary border border-border rounded px-1 py-0.5 outline-none focus:border-violet-500/50 tabular-nums"
+            maxLength={4}
+          />
+        ) : item.estimatedMinutes ? (
+          <button
+            onClick={() => handleEstimateClick(item.taskId, item.estimatedMinutes)}
+            className={`shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer ${
+              isItemActive ? 'text-violet-400' : 'text-text-muted'
+            }`}
+          >
+            {estimateLabel ?? formatEstimate(item.estimatedMinutes)}
+          </button>
+        ) : (
+          <button
+            onClick={() => handleEstimateClick(item.taskId, null)}
+            className="shrink-0 text-[10px] tabular-nums text-text-muted/30 hover:text-text-muted/60 px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer"
+          >
+            + tempo
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col">
@@ -202,6 +338,13 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
           {completed}/{total} {started ? 'concluídas' : 'tarefas'}
         </span>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowAddTask((v) => !v); setTimeout(() => taskRef.current?.focus(), 50) }}
+            className="p-0.5 rounded hover:bg-bg-hover transition-colors"
+            title="Adicionar tarefa"
+          >
+            <Plus size={12} className="text-text-muted" />
+          </button>
           {!started && (
             <>
               <button
@@ -220,15 +363,6 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                 Iniciar
               </motion.button>
             </>
-          )}
-          {started && (
-            <button
-              onClick={() => { setShowAddTask((v) => !v); setTimeout(() => taskRef.current?.focus(), 50) }}
-              className="p-0.5 rounded hover:bg-bg-hover transition-colors"
-              title="Adicionar tarefa"
-            >
-              <Plus size={12} className="text-text-muted" />
-            </button>
           )}
         </div>
       </div>
@@ -252,11 +386,51 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
         </div>
       )}
 
-      {/* Two-panel: hour grid (left) + task list (right) */}
+      {/* Full 24h grid with blocks */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="flex min-h-full">
-          {/* Hour grid — fixed-width gutter */}
-          <div className="shrink-0 relative mt-5" style={{ width: totalGutter, height: totalGridHeight }}>
+        <div className="flex relative" style={{ height: TOTAL_GRID_HEIGHT }}>
+          {/* Current time indicator — spans full width */}
+          {(() => {
+            const y = timeToY(currentMinutes) + 20 /* mt-5 offset */
+            const currentTimeLabel = formatTime(currentMinutes)
+            return (
+              <div className="absolute z-20 pointer-events-none" style={{ top: y, left: 0, right: 0 }}>
+                {/* Time label in gutter */}
+                <div
+                  className="absolute flex items-center justify-end pr-2"
+                  style={{ top: -8, left: 0, width: GUTTER_WIDTH, height: 16 }}
+                >
+                  <span className="text-[10px] text-error font-semibold tabular-nums select-none bg-bg-primary px-0.5 rounded leading-none">
+                    {currentTimeLabel}
+                  </span>
+                </div>
+                {/* Secondary timezone */}
+                {hasSecondary && secondaryTimezone && (
+                  <div
+                    className="absolute flex items-center justify-start pl-1"
+                    style={{ top: -8, left: GUTTER_WIDTH, width: SECONDARY_GUTTER, height: 16 }}
+                  >
+                    <span className="text-[9px] text-error/60 font-semibold tabular-nums select-none bg-bg-primary px-0.5 rounded leading-none">
+                      {(() => {
+                        const fromOffset = getTzOffsetMinutes(primaryTimezone)
+                        const toOffset = getTzOffsetMinutes(secondaryTimezone)
+                        const diff = toOffset - fromOffset
+                        const secMinutes = ((currentMinutes + diff) + 1440) % 1440
+                        return formatTime(secMinutes)
+                      })()}
+                    </span>
+                  </div>
+                )}
+                {/* Red line + dot */}
+                <div className="flex items-center" style={{ marginLeft: totalGutter - 4 }}>
+                  <div className="w-2 h-2 rounded-full bg-error shrink-0" />
+                  <div className="flex-1 h-[1.5px] bg-error/70" />
+                </div>
+              </div>
+            )
+          })()}
+          {/* Hour gutter */}
+          <div className="shrink-0 relative mt-5" style={{ width: totalGutter, height: TOTAL_GRID_HEIGHT }}>
             {HOURS_ORDER.map((h, visualIndex) => {
               const y = visualIndex * HOUR_HEIGHT
               return (
@@ -266,7 +440,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                     style={{ top: y - 5, left: 0, width: GUTTER_WIDTH, height: 10 }}
                   >
                     <span className="text-[10px] text-text-muted/70 font-medium tabular-nums select-none leading-none">
-                      {formatHour(h)}
+                      {String(h).padStart(2, '0')}
                     </span>
                   </div>
                   {hasSecondary && secondaryTimezone && (() => {
@@ -280,7 +454,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                         style={{ top: y - 5, left: GUTTER_WIDTH, width: SECONDARY_GUTTER, height: 10 }}
                       >
                         <span className="text-[9px] text-text-muted/40 font-medium tabular-nums select-none leading-none">
-                          {formatHour(secondaryHour)}
+                          {String(secondaryHour).padStart(2, '0')}
                         </span>
                       </div>
                     )
@@ -299,140 +473,65 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
               )
             })}
 
-            {/* Current time indicator in gutter */}
-            {(() => {
-              const currentTimeTop = timeToY(currentMinutes)
-              const ch = Math.floor(currentMinutes / 60)
-              const cm = currentMinutes % 60
-              const currentTimeLabel = `${String(ch).padStart(2, '0')}:${String(cm).padStart(2, '0')}`
-              return (
-                <div className="absolute z-20 pointer-events-none" style={{ top: currentTimeTop, left: 0, right: 0 }}>
-                  <div className="absolute flex items-center justify-end pr-2" style={{ top: -8, left: 0, width: GUTTER_WIDTH, height: 16 }}>
-                    <span className="text-[10px] text-error font-semibold tabular-nums select-none bg-bg-primary px-0.5 rounded leading-none">
-                      {currentTimeLabel}
-                    </span>
-                  </div>
-                  <div className="absolute right-0 flex items-center">
-                    <div className="w-2 h-2 rounded-full bg-error shrink-0" />
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* TZ labels */}
+            {/* TZ label */}
             <div className="absolute pointer-events-none flex items-center justify-end pr-3" style={{ top: -18, left: 0, width: GUTTER_WIDTH }}>
               <span className="text-[9px] text-text-muted/50 font-medium select-none">{formatTzOffset(primaryTimezone)}</span>
             </div>
           </div>
 
-          {/* Task list — flat layout for single block */}
-          <div className="flex-1 pt-3 pb-8 pr-3">
-                  {/* Block header */}
-                  <div className="flex items-center gap-2 py-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: blockColor }} />
-                    <span className="text-[10px] font-medium text-text-muted truncate">{flowBlock?.title || 'Bloco'}</span>
-                    {flowBlock && (
-                      <span className="text-[10px] text-text-muted/50 tabular-nums shrink-0">
-                        {formatBlockTime(flowBlock.startTime)}–{formatBlockTime(flowBlock.endTime)}
-                      </span>
-                    )}
-                  </div>
+          {/* Blocks + tasks area */}
+          <div className="flex-1 relative mt-5" style={{ height: TOTAL_GRID_HEIGHT }}>
+            {/* Other blocks (context, non-interactive) */}
+            {otherBlocks.map((b) => {
+              const top = timeToY(b.startTime)
+              const height = ((b.endTime - b.startTime) / 60) * HOUR_HEIGHT
+              const color = BLOCK_COLORS[b.color] || BLOCK_COLORS.slate
+              return (
+                <div
+                  key={b.id}
+                  className="absolute left-0 right-3 rounded-md pointer-events-none"
+                  style={{
+                    top,
+                    height,
+                    backgroundColor: color + '10',
+                    borderLeft: `2px solid ${color}30`
+                  }}
+                >
+                  <span className="text-[9px] text-text-muted/40 px-2 pt-1 block truncate">
+                    {b.title}
+                  </span>
+                </div>
+              )
+            })}
 
-                  {/* Tasks — stacked */}
-                  <div className="flex flex-col gap-0.5">
-                  {indexedQueue.map((item) => {
-                    const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
-                    const task = blockTasks.find((t) => t.id === item.taskId)
-                    if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
-                    const taskLabel = task?.text || 'Tarefa'
-                    const isItemActive = item.index === currentIndex
-                    const isCompleted = item.status === 'completed' || task?.completed
-                    const mins = item.estimatedMinutes ?? DEFAULT_TASK_MINUTES
-                    const itemHeight = Math.max((mins / 60) * HOUR_HEIGHT, MIN_TASK_HEIGHT)
+            {/* Flow block start marker — draggable line */}
+            {flowBlock && (() => {
+              const top = timeToY(flowBlock.startTime)
+              return (
+                <div
+                  className="absolute left-0 right-3 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none z-10"
+                  style={{ top: top - 10, height: 20 }}
+                  onMouseDown={handleBlockDragStart}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: blockColor }} />
+                  <span className="text-[10px] font-medium truncate" style={{ color: blockColor }}>{flowBlock.title}</span>
+                  <span className="text-[10px] text-text-muted/50 tabular-nums shrink-0">
+                    {formatTime(flowBlock.startTime)}–{formatTime(flowBlock.endTime)}
+                  </span>
+                  <div className="flex-1 border-t border-dashed" style={{ borderColor: blockColor + '40' }} />
+                </div>
+              )
+            })()}
 
-                    let estimateLabel: string | null = null
-                    if (item.estimatedMinutes && isItemActive) {
-                      const remainingSec = Math.max(0, item.estimatedMinutes * 60 - taskElapsed)
-                      const remainingMin = Math.ceil(remainingSec / 60)
-                      estimateLabel = remainingMin > 0 ? formatEstimate(remainingMin) : '0m'
-                    }
-
-                    return (
-                      <div
-                        key={`${item.blockId}-${item.taskId}`}
-                        className={`flex items-start gap-2 px-2 pt-1.5 rounded-lg transition-colors ${
-                          isCompleted ? 'opacity-40' : ''
-                        }`}
-                        style={{
-                          minHeight: itemHeight,
-                          backgroundColor: isItemActive ? blockColor + '20' : isCompleted ? blockColor + '08' : blockColor + '12',
-                          borderLeft: `2px solid ${isItemActive ? blockColor : blockColor + '30'}`
-                        }}
-                      >
-                        {/* Checkbox */}
-                        <button
-                          className="shrink-0"
-                          onClick={() => !isCompleted && handleToggleTask(item.blockKey, item.taskId)}
-                        >
-                          {isCompleted ? (
-                            <Check size={14} className="text-success" />
-                          ) : isItemActive ? (
-                            <Circle size={14} className="text-violet-500 fill-violet-500 hover:text-success cursor-pointer" />
-                          ) : (
-                            <Circle size={14} className="text-border hover:text-success cursor-pointer" />
-                          )}
-                        </button>
-
-                        {/* Task name */}
-                        <span className={`flex-1 text-sm truncate ${
-                          isCompleted
-                            ? 'line-through text-text-muted'
-                            : isItemActive
-                              ? 'text-text-primary font-medium'
-                              : 'text-text-secondary'
-                        }`}>
-                          {taskLabel}
-                        </span>
-
-                        {/* Estimate */}
-                        {editingEstimateId === item.taskId ? (
-                          <input
-                            ref={estimateInputRef}
-                            type="text"
-                            value={estimateInput}
-                            onChange={(e) => setEstimateInput(e.target.value.replace(/[^0-9]/g, ''))}
-                            onBlur={() => handleEstimateCommit(item.blockKey, item.taskId)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleEstimateCommit(item.blockKey, item.taskId)
-                              if (e.key === 'Escape') { setEditingEstimateId(null); setEstimateInput('') }
-                            }}
-                            placeholder="min"
-                            className="w-10 text-[10px] text-center bg-bg-secondary border border-border rounded px-1 py-0.5 outline-none focus:border-violet-500/50 tabular-nums"
-                            maxLength={4}
-                          />
-                        ) : item.estimatedMinutes ? (
-                          <button
-                            onClick={() => handleEstimateClick(item.taskId, item.estimatedMinutes)}
-                            className={`shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer ${
-                              isItemActive ? 'text-violet-400' : 'text-text-muted'
-                            }`}
-                          >
-                            {isItemActive && estimateLabel
-                              ? `${estimateLabel}`
-                              : formatEstimate(item.estimatedMinutes)}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleEstimateClick(item.taskId, null)}
-                            className="shrink-0 text-[10px] tabular-nums text-text-muted/30 hover:text-text-muted/60 px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer"
-                          >
-                            + tempo
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                  </div>
+            {/* Tasks — positioned at block start, stacked by estimate height */}
+            {flowBlock && (
+              <div
+                className="absolute left-0 right-3 flex flex-col gap-0.5"
+                style={{ top: timeToY(flowBlock.startTime) + 12 }}
+              >
+                {indexedQueue.map((item) => renderTaskItem(item))}
+              </div>
+            )}
           </div>
         </div>
       </div>
