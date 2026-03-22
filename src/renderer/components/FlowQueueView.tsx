@@ -7,6 +7,11 @@ import { useTimeBlockStore } from '../stores/timeBlockStore'
 import { formatEstimate } from '../utils/taskEstimates'
 import { START_HOUR } from './TimeBlockItem'
 import { useSettingsStore, formatTzOffset, getTzOffsetMinutes } from '../stores/settingsStore'
+import type { TimeBlock } from '../stores/timeBlockStore'
+import type { Task } from '../stores/taskStore'
+
+const EMPTY_BLOCKS: TimeBlock[] = []
+const EMPTY_TASKS: Task[] = []
 
 function formatBlockTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
@@ -57,7 +62,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const taskAccumulatedSeconds = useFlowStore((s) => s.taskAccumulatedSeconds)
   const allTasks = useTaskStore((s) => s.tasks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
-  const blocks = allBlocks[date] || []
+  const blocks = allBlocks[date] ?? EMPTY_BLOCKS
 
   // Flow block info (single block mode)
   const flowBlockId = useFlowStore((s) => s.blockId)
@@ -336,7 +341,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                   {/* Tasks — stacked */}
                   <div className="flex flex-col gap-0.5">
                   {indexedQueue.map((item) => {
-                    const blockTasks = allTasks[item.blockKey] || []
+                    const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
                     const task = blockTasks.find((t) => t.id === item.taskId)
                     if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
                     const taskLabel = task?.text || 'Tarefa'

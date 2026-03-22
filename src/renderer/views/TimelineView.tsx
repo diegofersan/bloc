@@ -23,6 +23,7 @@ import { syncDate } from '../services/googleCalendarSync'
 type ViewMode = 'timeline' | 'detail'
 
 const EMPTY_BLOCKS: TimeBlock[] = []
+const EMPTY_DISTRACTIONS: import('../stores/taskStore').Distraction[] = []
 
 function formatTimeHHMM(minutes: number): string {
   const h = Math.floor(minutes / 60)
@@ -138,7 +139,7 @@ function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
   const distractionRef = useRef<HTMLInputElement>(null)
   const [distractionText, setDistractionText] = useState('')
 
-  const distractions = useTaskStore((s) => s.distractions[date] || [])
+  const distractions = useTaskStore((s) => s.distractions[date] ?? EMPTY_DISTRACTIONS)
   const addDistraction = useTaskStore((s) => s.addDistraction)
   const pendingDistractions = distractions.filter((d) => d.status === 'pending')
 
