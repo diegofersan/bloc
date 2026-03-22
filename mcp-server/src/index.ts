@@ -144,7 +144,8 @@ function formatDaySummary(data: DayFileData): string {
 function formatTaskSummary(task: TaskData, indent: number): string {
   const prefix = '  '.repeat(indent)
   const check = task.completed ? '[x]' : '[ ]'
-  let line = `${prefix}- ${check} ${task.text} (id: ${task.id})`
+  const est = task.estimatedMinutes ? ` (~${task.estimatedMinutes}min)` : ''
+  let line = `${prefix}- ${check} ${task.text}${est} (id: ${task.id})`
   for (const sub of task.subtasks) {
     line += '\n' + formatTaskSummary(sub, indent + 1)
   }
@@ -242,14 +243,16 @@ server.tool(
   {
     date: z.string().describe('Date in YYYY-MM-DD format'),
     text: z.string().describe('Task text'),
-    block_id: z.string().optional().describe('Time block ID to create the task inside (optional)')
+    block_id: z.string().optional().describe('Time block ID to create the task inside (optional)'),
+    estimated_minutes: z.number().optional().describe('Estimated duration in minutes (optional)')
   },
-  async ({ date, text, block_id }) => {
+  async ({ date, text, block_id, estimated_minutes }) => {
     const data = getOrCreateDay(date)
     const task: TaskData = {
       id: uuidv4(),
       text,
       completed: false,
+      estimatedMinutes: estimated_minutes,
       createdAt: Date.now(),
       subtasks: []
     }

@@ -7,7 +7,9 @@ import { usePomodoroStore } from '../stores/pomodoroStore'
 import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import { useTaskStore, type Distraction } from '../stores/taskStore'
 import TaskEditor from '../components/TaskEditor'
-import { PomodoroTimerCore } from '../components/PomodoroTimer'
+import FlowTimer from '../components/FlowTimer'
+import FlowQueueView from '../components/FlowQueueView'
+import { useFlowStore } from '../stores/flowStore'
 
 const EXPANDED_WIDTH = 480
 const EXPANDED_HEIGHT = 540
@@ -56,6 +58,9 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
   const [distractionText, setDistractionText] = useState('')
   const distractionInputRef = useRef<HTMLInputElement>(null)
 
+  // Flow state
+  const flowIsActive = useFlowStore((s) => s.isActive)
+
   // Pomodoro state (read-only for display, controls via PomodoroTimerCore)
   const stealthyBlockId = usePomodoroStore((s) => s.stealthyBlockId)
   const stealthyDate = usePomodoroStore((s) => s.stealthyDate)
@@ -91,45 +96,47 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
   // Gap to next block
   const gapMinutes = useMemo(() => getGapMinutes(blocks), [blocks])
 
-  // Border flash on pomo/break end + countdown lead-in
-  const pomodoroStatus = usePomodoroStore((s) => s.status)
-  const pomodoroSeconds = usePomodoroStore((s) => s.secondsRemaining)
-  const pomodoroIsPaused = usePomodoroStore((s) => s.isPaused)
-  const prevPomodoroStatusRef = useRef(pomodoroStatus)
+  // Border flash on flow phase transitions + countdown lead-in
+  const flowPhase = useFlowStore((s) => s.phase)
+  const flowSeconds = useFlowStore((s) => s.secondsRemaining)
+  const flowIsPaused = useFlowStore((s) => s.isPaused)
+  const prevFlowPhaseRef = useRef(flowPhase)
   const [borderFlash, setBorderFlash] = useState<'work' | 'break' | null>(null)
   const [borderCountdown, setBorderCountdown] = useState<'work' | 'break' | null>(null)
   const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Lead-in: start border at 3 seconds remaining
   useEffect(() => {
-    if (pomodoroIsPaused || pomodoroStatus === 'idle') {
+    if (!flowIsActive || flowIsPaused) {
       setBorderCountdown(null)
       return
     }
-    if (pomodoroSeconds <= 3 && pomodoroSeconds > 0) {
-      setBorderCountdown(pomodoroStatus === 'working' ? 'work' : 'break')
+    if (flowSeconds <= 3 && flowSeconds > 0) {
+      setBorderCountdown(flowPhase === 'working' ? 'work' : 'break')
     } else {
       setBorderCountdown(null)
     }
-  }, [pomodoroSeconds, pomodoroStatus, pomodoroIsPaused])
+  }, [flowSeconds, flowPhase, flowIsPaused, flowIsActive])
 
   // Full flash on transition
   useEffect(() => {
-    const prev = prevPomodoroStatusRef.current
-    prevPomodoroStatusRef.current = pomodoroStatus
+    const prev = prevFlowPhaseRef.current
+    prevFlowPhaseRef.current = flowPhase
 
-    if (prev === 'working' && pomodoroStatus === 'break') {
+    if (!flowIsActive) return
+
+    if (prev === 'working' && flowPhase === 'break') {
       setBorderCountdown(null)
       setBorderFlash('work')
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
       flashTimerRef.current = setTimeout(() => setBorderFlash(null), 2000)
-    } else if (prev === 'break' && pomodoroStatus === 'idle') {
+    } else if (prev === 'break' && flowPhase === 'working') {
       setBorderCountdown(null)
       setBorderFlash('break')
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
       flashTimerRef.current = setTimeout(() => setBorderFlash(null), 2000)
     }
-  }, [pomodoroStatus])
+  }, [flowPhase, flowIsActive])
 
   useEffect(() => {
     return () => { if (flashTimerRef.current) clearTimeout(flashTimerRef.current) }
@@ -197,7 +204,7 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
         {/* Row 1: PomodoroTimer + task + expand */}
         <div className="titlebar-drag flex items-center gap-2 px-3 pt-2 pb-1">
           <div className="shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <PomodoroTimerCore date={activeDate} hideStealthy />
+            {flowIsActive && <FlowTimer compact />}
           </div>
           <div className="flex-1 min-w-0">
             {firstPendingTask ? (
@@ -251,39 +258,45 @@ export default function StealthyView({ onExit }: StealthyViewProps) {
         </div>
       </div>
 
-      {/* Pomodoro Timer + Current/Next Block — same line */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-2">
-        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <PomodoroTimerCore date={activeDate} hideStealthy />
+      {flowIsActive ? (
+        /* Flow mode: queue replaces timer + tasks */
+        <div className="flex-1 overflow-hidden min-h-0">
+          <FlowQueueView date={activeDate} />
         </div>
-        <div className="flex items-center gap-1.5 min-w-0">
-          {currentBlock ? (
-            <>
-              <div className={`shrink-0 w-2 h-2 rounded-full`} style={{ backgroundColor: currentBlock.color === 'indigo' ? 'var(--color-accent)' : `var(--color-${currentBlock.color}, #6366f1)` }} />
-              <span className="text-xs text-text-secondary truncate">{currentBlock.title}</span>
-              <span className="text-[10px] text-text-muted shrink-0">
-                {formatBlockTime(currentBlock.startTime)}–{formatBlockTime(currentBlock.endTime)}
-              </span>
-            </>
-          ) : nextBlock ? (
-            <>
-              <div className="shrink-0 w-2 h-2 rounded-full bg-border" />
-              <span className="text-[11px] text-text-muted truncate">Próximo: {nextBlock.title}</span>
-              <span className="text-[10px] text-text-muted shrink-0">{formatBlockTime(nextBlock.startTime)}</span>
-            </>
-          ) : (
-            <span className="text-[11px] text-text-muted">Sem blocos</span>
-          )}
-        </div>
-      </div>
+      ) : (
+        <>
+          {/* Current/Next Block */}
+          <div className="shrink-0 flex items-center justify-end px-3 py-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {currentBlock ? (
+                <>
+                  <div className={`shrink-0 w-2 h-2 rounded-full`} style={{ backgroundColor: currentBlock.color === 'indigo' ? 'var(--color-accent)' : `var(--color-${currentBlock.color}, #6366f1)` }} />
+                  <span className="text-xs text-text-secondary truncate">{currentBlock.title}</span>
+                  <span className="text-[10px] text-text-muted shrink-0">
+                    {formatBlockTime(currentBlock.startTime)}–{formatBlockTime(currentBlock.endTime)}
+                  </span>
+                </>
+              ) : nextBlock ? (
+                <>
+                  <div className="shrink-0 w-2 h-2 rounded-full bg-border" />
+                  <span className="text-[11px] text-text-muted truncate">Próximo: {nextBlock.title}</span>
+                  <span className="text-[10px] text-text-muted shrink-0">{formatBlockTime(nextBlock.startTime)}</span>
+                </>
+              ) : (
+                <span className="text-[11px] text-text-muted">Sem blocos</span>
+              )}
+            </div>
+          </div>
 
-      {/* Divider */}
-      <div className="shrink-0 mx-3 border-t border-border/30" />
+          {/* Divider */}
+          <div className="shrink-0 mx-3 border-t border-border/30" />
 
-      {/* Tasks — full TaskEditor */}
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <TaskEditor date={blockTaskKey} tasks={tasks} />
-      </div>
+          {/* Tasks — full TaskEditor */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TaskEditor date={blockTaskKey} tasks={tasks} />
+          </div>
+        </>
+      )}
 
       {/* Distractions */}
       <div className="shrink-0 px-3 pb-3">

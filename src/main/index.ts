@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, screen } from 'electron'
+import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, screen, Menu } from 'electron'
 import { join } from 'path'
 import { existsSync, writeFileSync, chmodSync } from 'fs'
 import { spawn } from 'child_process'
@@ -167,6 +167,68 @@ rm -rf "$TEMP_DIR"
     registerSyncHandlers()
     registerSiteBlockerHandlers()
     registerGoogleCalendarHandlers()
+
+    // Application menu
+    const menuTemplate: Electron.MenuItemConstructorOptions[] = [
+      ...(process.platform === 'darwin' ? [{
+        label: app.name,
+        submenu: [
+          { role: 'about' as const },
+          { type: 'separator' as const },
+          { role: 'hide' as const },
+          { role: 'hideOthers' as const },
+          { role: 'unhide' as const },
+          { type: 'separator' as const },
+          { role: 'quit' as const }
+        ]
+      }] : []),
+      {
+        label: 'Editar',
+        submenu: [
+          { role: 'undo' as const },
+          { role: 'redo' as const },
+          { type: 'separator' as const },
+          { role: 'cut' as const },
+          { role: 'copy' as const },
+          { role: 'paste' as const },
+          { role: 'selectAll' as const }
+        ]
+      },
+      {
+        label: 'Ver',
+        submenu: [
+          {
+            label: 'Modo Stealthy',
+            click: () => {
+              if (!mainWindow) return
+              if (isStealthy) {
+                mainWindow.webContents.send('stealthy:toggle')
+              } else {
+                mainWindow.show()
+                mainWindow.focus()
+                mainWindow.webContents.send('stealthy:toggle')
+              }
+            }
+          },
+          { type: 'separator' as const },
+          { role: 'reload' as const },
+          { role: 'toggleDevTools' as const }
+        ]
+      },
+      {
+        label: 'Janela',
+        submenu: [
+          { role: 'minimize' as const },
+          { role: 'close' as const },
+          ...(process.platform === 'darwin' ? [
+            { type: 'separator' as const },
+            { role: 'front' as const }
+          ] : [])
+        ]
+      }
+    ]
+    Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+
     createWindow()
 
     tray = new Tray(createTrayIcon())

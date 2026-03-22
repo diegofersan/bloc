@@ -14,6 +14,7 @@ export interface Task {
   date: string
   createdAt: number
   isExpanding?: boolean
+  estimatedMinutes?: number
   references?: Array<{ date: string; taskId: string }>
 }
 
@@ -82,6 +83,7 @@ interface TaskState {
   getResolvedTask: (ref: TaskRef) => Task | null
   unindentTask: (date: string, subtaskId: string) => boolean
   getPendingTasksAcrossDates: () => Array<{ task: Task; date: string }>
+  updateTaskEstimate: (date: string, taskId: string, minutes: number | undefined) => void
   moveBlockTasks: (fromDate: string, blockId: string, toDate: string) => void
 }
 
@@ -831,6 +833,22 @@ export const useTaskStore = create<TaskState>()(
         return result.sort((a, b) => b.date.localeCompare(a.date))
       },
 
+      updateTaskEstimate: (date, taskId, minutes) => {
+        set((state) => {
+          const dateTasks = state.tasks[date]
+          if (!dateTasks) return state
+          return {
+            tasks: {
+              ...state.tasks,
+              [date]: updateTaskInList(dateTasks, taskId, (task) => ({
+                ...task,
+                estimatedMinutes: minutes
+              }))
+            }
+          }
+        })
+      },
+
       moveBlockTasks: (fromDate, blockId, toDate) => {
         set((state) => {
           const oldKey = `${fromDate}__block__${blockId}`
@@ -877,7 +895,7 @@ export const useTaskStore = create<TaskState>()(
     }),
     {
       name: 'bloc-tasks',
-      version: 2,
+      version: 3,
       partialize: (state) => {
         const cleanedTasks: Record<string, Task[]> = {}
         for (const [date, taskList] of Object.entries(state.tasks)) {
@@ -924,8 +942,48 @@ export const useTaskStore = create<TaskState>()(
           data.taskRefs = {}
         }
 
+        // v2 → v3: estimatedMinutes field added (optional, no migration needed)
+
         return data
       }
     }
   )
 )
+
+// Auto-resize blocks based on sum of task estimates
+import { useTimeBlockStore } from './timeBlockStore'
+
+const MIN_BLOCK_DURATION = 15 // minimum block size in minutes
+
+useTaskStore.subscribe((state, prevState) => {
+  const blockStore = useTimeBlockStore.getState()
+  const allBlocks = blockStore.blocks
+
+  for (const [key, tasks] of Object.entries(state.tasks)) {
+    // Only process block keys (date__block__id)
+    if (!key.includes('__block__')) continue
+
+    const prevTasks = prevState.tasks[key]
+    if (tasks === prevTasks) continue // no change in this block's tasks
+
+    const parts = key.split('__block__')
+    const date = parts[0]
+    const blockId = parts[1]
+    if (!date || !blockId) continue
+
+    const blocks = allBlocks[date] || []
+    const block = blocks.find((b) => b.id === blockId)
+    if (!block || block.isGoogleReadOnly) continue
+
+    // Sum estimates of non-completed tasks
+    const totalMinutes = tasks.reduce((sum, t) => {
+      if (t.completed) return sum
+      return sum + (t.estimatedMinutes ?? 0)
+    }, 0)
+
+    const newEndTime = block.startTime + Math.max(totalMinutes, MIN_BLOCK_DURATION)
+    if (newEndTime !== block.endTime) {
+      useTimeBlockStore.getState().updateBlock(date, blockId, { endTime: newEndTime })
+    }
+  }
+})

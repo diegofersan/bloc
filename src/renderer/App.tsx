@@ -20,10 +20,11 @@ import { useTimeBlockStore } from './stores/timeBlockStore'
 import { useClipboardStore } from './stores/clipboardStore'
 import ClipboardBar from './components/ClipboardBar'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
-import { usePomodoroStore, type PomodoroStatus } from './stores/pomodoroStore'
+import { usePomodoroStore } from './stores/pomodoroStore'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
 import { startPeriodicSync, stopPeriodicSync } from './services/googleCalendarSync'
 import { useGoogleCalendarStore } from './stores/googleCalendarStore'
+import { useFlowStore } from './stores/flowStore'
 
 declare global {
   interface Window {
@@ -86,43 +87,43 @@ function NavigationListener() {
   return null
 }
 
-function PomodoroRouteGuard() {
+function FlowRouteGuard() {
   const location = useLocation()
-  const status = usePomodoroStore((s) => s.status)
-  const pomodoroDate = usePomodoroStore((s) => s.pomodoroDate)
-  const autoPaused = usePomodoroStore((s) => s.autoPaused)
-  const autoPause = usePomodoroStore((s) => s.autoPause)
-  const autoResume = usePomodoroStore((s) => s.autoResume)
+  const flowIsActive = useFlowStore((s) => s.isActive)
+  const flowDate = useFlowStore((s) => s.date)
+  const flowPause = useFlowStore((s) => s.pause)
+  const flowResume = useFlowStore((s) => s.resume)
+  const flowIsPaused = useFlowStore((s) => s.isPaused)
+  const pausedByGuard = useRef(false)
 
   useEffect(() => {
-    if (status === 'idle' || !pomodoroDate) return
-
-    const isOnPomodoroDay = location.pathname === `/day/${pomodoroDate}`
-
-    if (!isOnPomodoroDay) {
-      autoPause()
-    } else if (autoPaused) {
-      autoResume()
+    if (!flowIsActive || !flowDate) {
+      pausedByGuard.current = false
+      return
     }
-  }, [location.pathname, status, pomodoroDate, autoPaused, autoPause, autoResume])
+
+    const isOnFlowDay = location.pathname === `/day/${flowDate}`
+
+    if (!isOnFlowDay && !flowIsPaused) {
+      flowPause()
+      pausedByGuard.current = true
+    } else if (isOnFlowDay && flowIsPaused && pausedByGuard.current) {
+      flowResume()
+      pausedByGuard.current = false
+    }
+  }, [location.pathname, flowIsActive, flowDate, flowIsPaused, flowPause, flowResume])
 
   return null
 }
 
-function PomodoroReturnBar() {
+function FlowReturnBar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const status = usePomodoroStore((s) => s.status)
-  const pomodoroDate = usePomodoroStore((s) => s.pomodoroDate)
-  const secondsRemaining = usePomodoroStore((s) => s.secondsRemaining)
+  const flowIsActive = useFlowStore((s) => s.isActive)
+  const flowDate = useFlowStore((s) => s.date)
 
-  if (status === 'idle' || !pomodoroDate) return null
-  if (location.pathname === `/day/${pomodoroDate}`) return null
-
-  const m = Math.floor(secondsRemaining / 60)
-  const s = secondsRemaining % 60
-  const time = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  const statusColor = status === 'working' ? 'text-accent' : 'text-success'
+  if (!flowIsActive || !flowDate) return null
+  if (location.pathname === `/day/${flowDate}`) return null
 
   return (
     <motion.button
@@ -130,12 +131,11 @@ function PomodoroReturnBar() {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
       transition={{ duration: 0.2 }}
-      onClick={() => navigate(`/day/${pomodoroDate}`)}
+      onClick={() => navigate(`/day/${flowDate}`)}
       className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-full bg-bg-secondary border border-border shadow-lg hover:bg-bg-hover transition-colors cursor-pointer"
     >
-      <Play size={14} className={statusColor} />
-      <span className={`text-xs font-medium tabular-nums ${statusColor}`}>{time}</span>
-      <span className="text-xs font-medium text-text-secondary">Voltar ao trabalho</span>
+      <Play size={14} className="text-violet-500" />
+      <span className="text-xs font-medium text-text-secondary">Voltar ao fluxo</span>
     </motion.button>
   )
 }
@@ -188,8 +188,19 @@ export default function App() {
     const match = hash.match(/#\/day\/(\d{4}-\d{2}-\d{2})/)
     const viewDate = match ? match[1] : null
     const store = usePomodoroStore.getState()
-    // Priority: viewing date > pomodoro date > today
-    store.setStealthyDate(viewDate || store.pomodoroDate || format(new Date(), 'yyyy-MM-dd'))
+    const activeDate = viewDate || store.pomodoroDate || format(new Date(), 'yyyy-MM-dd')
+    store.setStealthyDate(activeDate)
+
+    // If no block is pinned, detect current block by time
+    if (!store.stealthyBlockId) {
+      const blocks = useTimeBlockStore.getState().blocks[activeDate] || []
+      const now = new Date()
+      const currentMinutes = now.getHours() * 60 + now.getMinutes()
+      const currentBlock = blocks.find((b) => b.startTime <= currentMinutes && b.endTime > currentMinutes)
+      if (currentBlock) {
+        store.setStealthyBlockId(currentBlock.id)
+      }
+    }
   }, [])
 
   const clearStealthyContext = useCallback(() => {
@@ -279,52 +290,49 @@ export default function App() {
     return () => stopPeriodicSync()
   }, [gcalConnected, gcalCalendarId])
 
-  // Pomodoro state for tray + site blocker
-  const pomodoroStatus = usePomodoroStore((s) => s.status)
-  const pomodoroSeconds = usePomodoroStore((s) => s.secondsRemaining)
-  const pomodoroIsPaused = usePomodoroStore((s) => s.isPaused)
+  // Flow state for tray + site blocker
+  const flowIsActiveApp = useFlowStore((s) => s.isActive)
+  const flowPhaseApp = useFlowStore((s) => s.phase)
+  const flowSecondsApp = useFlowStore((s) => s.secondsRemaining)
+  const flowIsPausedApp = useFlowStore((s) => s.isPaused)
 
   // Global tray update (always mounted, survives view changes)
+  const flowStartedTray = useFlowStore((s) => s.started)
   useEffect(() => {
-    if (pomodoroStatus === 'idle') {
+    if (!flowIsActiveApp || !flowStartedTray) {
       window.bloc?.updatePomodoroTray(null, null)
       return
     }
-    const m = Math.floor(pomodoroSeconds / 60)
-    const s = pomodoroSeconds % 60
+    const m = Math.floor(flowSecondsApp / 60)
+    const s = flowSecondsApp % 60
     const time = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    const pauseIndicator = pomodoroIsPaused ? ' ⏸' : ''
-    window.bloc?.updatePomodoroTray(`${time}${pauseIndicator}`, pomodoroStatus)
-  }, [pomodoroStatus, pomodoroSeconds, pomodoroIsPaused])
+    const pauseIndicator = flowIsPausedApp ? ' ⏸' : ''
+    window.bloc?.updatePomodoroTray(`${time}${pauseIndicator}`, flowPhaseApp)
+  }, [flowIsActiveApp, flowStartedTray, flowSecondsApp, flowIsPausedApp, flowPhaseApp])
 
-  // Site blocker: react to pomodoro status changes
+  // Site blocker: react to flow phase changes (block during work, unblock during break)
   const blockDuringPomodoro = useSiteBlockerStore((s) => s.blockDuringPomodoro)
   const blockedSites = useSiteBlockerStore((s) => s.blockedSites)
   const setIsBlocking = useSiteBlockerStore((s) => s.setIsBlocking)
-
-  const prevPomodoroStatus = useRef<PomodoroStatus>('idle')
+  const flowStartedApp = useFlowStore((s) => s.started)
 
   useEffect(() => {
-    const prev = prevPomodoroStatus.current
-    prevPomodoroStatus.current = pomodoroStatus
-
     if (!blockDuringPomodoro || blockedSites.length === 0) return
 
     async function handleStatusChange() {
-      if (pomodoroStatus === 'working' && prev !== 'working') {
+      const shouldBlock = flowIsActiveApp && flowStartedApp && flowPhaseApp === 'working'
+
+      if (shouldBlock) {
         const ok = await window.bloc?.siteBlocker.enable(blockedSites)
         if (ok) setIsBlocking(true)
-      }
-
-      // Keep blocking during break — only disable at idle
-      if (pomodoroStatus === 'idle' && prev !== 'idle') {
+      } else {
         const ok = await window.bloc?.siteBlocker.disable()
         if (ok) setIsBlocking(false)
       }
     }
 
     handleStatusChange()
-  }, [pomodoroStatus, blockDuringPomodoro, blockedSites, setIsBlocking])
+  }, [flowIsActiveApp, flowStartedApp, flowPhaseApp, blockDuringPomodoro, blockedSites, setIsBlocking])
 
   // Cleanup old distractions on mount
   useEffect(() => {
@@ -439,10 +447,10 @@ export default function App() {
     <HashRouter>
       <div className="h-full bg-bg-primary text-text-primary">
         <NavigationListener />
-        <PomodoroRouteGuard />
+        <FlowRouteGuard />
         <AnimatedRoutes />
         <ClipboardBar />
-        <PomodoroReturnBar />
+        <FlowReturnBar />
         <QuickCaptureOverlay
           visible={showCapture}
           onClose={() => setShowCapture(false)}

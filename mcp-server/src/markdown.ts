@@ -8,6 +8,7 @@ export interface TaskData {
   text: string
   completed: boolean
   completedAt?: number
+  estimatedMinutes?: number
   createdAt: number
   subtasks: TaskData[]
 }
@@ -54,6 +55,9 @@ function serializeTask(task: TaskData, indent: number): string {
   let meta = `@id:${task.id} @created:${task.createdAt}`
   if (task.completed && task.completedAt) {
     meta += ` @completed:${task.completedAt}`
+  }
+  if (task.estimatedMinutes) {
+    meta += ` @est:${task.estimatedMinutes}`
   }
   let line = `${prefix}- ${checkbox} ${task.text} <!--${meta}-->`
 
@@ -218,6 +222,7 @@ function buildTaskData(parsed: ParsedTaskLine): TaskData {
     text: parsed.text,
     completed: parsed.completed,
     completedAt: parsed.meta.completed ? parseInt(parsed.meta.completed, 10) : undefined,
+    estimatedMinutes: parsed.meta.est ? parseInt(parsed.meta.est, 10) : undefined,
     createdAt: parsed.meta.created ? parseInt(parsed.meta.created, 10) : Date.now(),
     subtasks: []
   }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus } from 'lucide-react'
+import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus, Clock } from 'lucide-react'
+import { getSuggestedEstimate, formatEstimate } from '../utils/taskEstimates'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -87,14 +88,17 @@ export default function EditableTaskRow({
   onUnlink,
   onBreakOut
 }: EditableTaskRowProps) {
-  const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding } = useTaskStore()
+  const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding, updateTaskEstimate } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
   const [hovered, setHovered] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [localText, setLocalText] = useState(task.text)
   const [deferModalOpen, setDeferModalOpen] = useState(false)
   const [pasteLines, setPasteLines] = useState<string[] | null>(null)
+  const [editingEstimate, setEditingEstimate] = useState(false)
+  const [estimateInput, setEstimateInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const estimateInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setLocalText(task.text)
@@ -105,6 +109,39 @@ export default function EditableTaskRow({
       inputRef.current?.focus()
     }
   }, [isFocused])
+
+  useEffect(() => {
+    if (editingEstimate && estimateInputRef.current) {
+      estimateInputRef.current.focus()
+      estimateInputRef.current.select()
+    }
+  }, [editingEstimate])
+
+  const effectiveEstimate = depth === 0 ? task.estimatedMinutes : undefined
+  const suggestedEstimate = depth === 0 ? getSuggestedEstimate(task) : undefined
+
+  function handleEstimateClick() {
+    if (suggestedEstimate && !task.estimatedMinutes) {
+      // Accept suggestion
+      updateTaskEstimate(date, task.id, suggestedEstimate)
+      return
+    }
+    setEstimateInput(task.estimatedMinutes?.toString() || '')
+    setEditingEstimate(true)
+  }
+
+  function handleEstimateCommit(andCreateBelow = false) {
+    const val = parseInt(estimateInput, 10)
+    if (estimateInput === '') {
+      // Don't clear existing estimate on empty input
+    } else if (!isNaN(val) && val > 0) {
+      updateTaskEstimate(date, task.id, val)
+    }
+    setEditingEstimate(false)
+    if (andCreateBelow) {
+      onCreateBelow()
+    }
+  }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter') {
@@ -124,6 +161,12 @@ export default function EditableTaskRow({
         onCreateBelow(rightPart)
       } else {
         updateTaskText(date, task.id, localText)
+        // Only focus estimate if task doesn't have one yet
+        if (depth === 0 && !task.completed && !task.estimatedMinutes) {
+          setEstimateInput('')
+          setEditingEstimate(true)
+          return
+        }
         onCreateBelow()
       }
     } else if (e.key === 'Backspace' && localText === '') {
@@ -291,6 +334,39 @@ export default function EditableTaskRow({
           }`}
           spellCheck={false}
         />
+
+        {depth === 0 && !task.completed && (editingEstimate ? (
+          <input
+            ref={estimateInputRef}
+            type="text"
+            value={estimateInput}
+            onChange={(e) => setEstimateInput(e.target.value.replace(/[^0-9]/g, ''))}
+            onBlur={() => handleEstimateCommit(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleEstimateCommit(true) }
+              if (e.key === 'Escape') { setEditingEstimate(false); inputRef.current?.focus() }
+            }}
+            placeholder="min"
+            className="w-12 text-[10px] text-center bg-bg-secondary border border-border rounded px-1 py-0.5 outline-none focus:border-accent/50 tabular-nums"
+            maxLength={4}
+          />
+        ) : effectiveEstimate ? (
+          <button
+            onClick={handleEstimateClick}
+            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded tabular-nums transition-colors text-text-secondary bg-bg-secondary hover:bg-bg-tertiary cursor-pointer"
+            title="Editar estimativa"
+          >
+            {formatEstimate(effectiveEstimate)}
+          </button>
+        ) : suggestedEstimate ? (
+          <button
+            onClick={handleEstimateClick}
+            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded text-text-muted/40 hover:text-text-muted/70 transition-colors tabular-nums"
+            title="Sugestão — clicar para aceitar"
+          >
+            {formatEstimate(suggestedEstimate)}?
+          </button>
+        ) : null)}
 
         <div className={`flex items-center gap-0.5 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'} group-focus-within:opacity-100`}>
           {depth === 0 && !task.completed && !isLinked && !isInsideBlock && (

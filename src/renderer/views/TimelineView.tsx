@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, EyeOff } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Zap } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -11,8 +11,10 @@ import { usePomodoroStore } from '../stores/pomodoroStore'
 import TimelineGrid from '../components/TimelineGrid'
 import DistractionItem from '../components/DistractionItem'
 import DayView from './DayView'
-import PomodoroTimer from '../components/PomodoroTimer'
 import DailyStandupModal from '../components/DailyStandupModal'
+import FlowTimer from '../components/FlowTimer'
+import FlowQueueView from '../components/FlowQueueView'
+import { useFlowStore } from '../stores/flowStore'
 import PendingTasksPanel from '../components/PendingTasksPanel'
 import HourglassIndicator from '../components/HourglassIndicator'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
@@ -130,6 +132,104 @@ function DetailBlockHeader({
   )
 }
 
+function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
+  const [sidebarWidth, setSidebarWidth] = useState(192)
+  const isDragging = useRef(false)
+  const distractionRef = useRef<HTMLInputElement>(null)
+  const [distractionText, setDistractionText] = useState('')
+
+  const distractions = useTaskStore((s) => s.distractions[date] || [])
+  const addDistraction = useTaskStore((s) => s.addDistraction)
+  const pendingDistractions = distractions.filter((d) => d.status === 'pending')
+
+  const handleAddDistraction = useCallback(() => {
+    const trimmed = distractionText.trim()
+    if (!trimmed) return
+    addDistraction(date, trimmed)
+    setDistractionText('')
+  }, [distractionText, date, addDistraction])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDragging.current = true
+    const startX = e.clientX
+    const startWidth = sidebarWidth
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return
+      const delta = startX - ev.clientX
+      setSidebarWidth(Math.max(120, Math.min(400, startWidth + delta)))
+    }
+    const onMouseUp = () => {
+      isDragging.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [sidebarWidth])
+
+  return (
+    <div className="h-full flex bg-bg-primary">
+      {/* Left: titlebar + timer + queue */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className={`titlebar-drag shrink-0 ${isNarrow ? 'px-3 pt-[38px]' : 'pl-5 pr-5 pt-[50px]'} pb-2`}>
+          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <FlowTimer />
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <FlowQueueView date={date} />
+        </div>
+      </div>
+
+      {/* Resize handle */}
+      <div
+        className="shrink-0 w-1 cursor-col-resize hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors"
+        onMouseDown={handleMouseDown}
+      />
+
+      {/* Right: Distractions sidebar — full height */}
+      <div className="shrink-0 flex flex-col border-l border-border/30" style={{ width: sidebarWidth }}>
+        <div className={`titlebar-drag shrink-0 ${isNarrow ? 'px-3 pt-[38px]' : 'px-3 pt-[50px]'} pb-2`}>
+          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+            Distrações
+          </span>
+        </div>
+
+        {/* Distraction list */}
+        <div className="flex-1 overflow-y-auto px-3 pb-2">
+          {pendingDistractions.length === 0 && (
+            <p className="text-[11px] text-text-muted/50 py-2">Nenhuma ainda</p>
+          )}
+          {pendingDistractions.map((d) => (
+            <div key={d.id} className="py-1">
+              <span className="text-[11px] text-text-muted leading-tight">{d.text}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Distraction input */}
+        <div className="shrink-0 px-3 pb-3 pt-2">
+          <div className="flex items-center gap-1.5">
+            <Zap size={10} className="shrink-0 text-distraction" />
+            <input
+              ref={distractionRef}
+              type="text"
+              value={distractionText}
+              onChange={(e) => setDistractionText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddDistraction() }}
+              placeholder="Anotar..."
+              className="flex-1 text-[11px] bg-bg-secondary/60 border border-border/40 rounded-md px-2 py-1 text-text-primary placeholder:text-text-muted outline-none focus:border-distraction/50 transition-colors"
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function TimelineView() {
   const { date } = useParams<{ date: string }>()
   const navigate = useNavigate()
@@ -168,6 +268,11 @@ export default function TimelineView() {
   const deferBlock = useTimeBlockStore((s) => s.deferBlock)
   const moveBlockTasks = useTaskStore((s) => s.moveBlockTasks)
   const [deferringBlock, setDeferringBlock] = useState<TimeBlock | null>(null)
+
+  // Flow (Go With The Flow) state
+  const flowIsActive = useFlowStore((s) => s.isActive)
+  const flowActivate = useFlowStore((s) => s.activate)
+  const showFlowButton = !flowIsActive && !!activeBlockId
 
   // Distractions
   const allDistractions = useTaskStore((s) => s.distractions)
@@ -229,6 +334,8 @@ export default function TimelineView() {
   // Back: detail → timeline, timeline → calendar
   // Uses ref so a fast double-click reads the already-updated value
   const handleBack = useCallback(() => {
+    // Block navigation during active flow
+    if (flowIsActive) return
     if (viewModeRef.current === 'detail') {
       viewModeRef.current = 'timeline'
       setViewMode('timeline')
@@ -236,7 +343,7 @@ export default function TimelineView() {
     } else {
       navigate('/')
     }
-  }, [navigate])
+  }, [navigate, flowIsActive])
 
   // Keyboard: Escape to go back
   useEffect(() => {
@@ -253,10 +360,10 @@ export default function TimelineView() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [editingBlockId, handleBack])
 
-  // Alt+Left/Right for day navigation
+  // Alt+Left/Right for day navigation (blocked during flow)
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (!date) return
+      if (!date || flowIsActive) return
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault()
         const prev = format(subDays(parseISO(date), 1), 'yyyy-MM-dd')
@@ -380,6 +487,11 @@ export default function TimelineView() {
     navigate(`/day/${format(addDays(parseISO(date), 1), 'yyyy-MM-dd')}`)
   }, [date, navigate])
 
+  // ─── Flow mode: task queue replaces everything when GWTF active ─────────
+  if (flowIsActive && date) {
+    return <FlowLayout date={date} isNarrow={isNarrow} />
+  }
+
   // ─── Detail mode: show embedded DayView + distractions ────────────────────
   if (viewMode === 'detail' && activeBlockId) {
     const activeBlock = blocks.find((b) => b.id === activeBlockId)
@@ -401,7 +513,18 @@ export default function TimelineView() {
               </motion.button>
             </div>
             <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              <PomodoroTimer />
+              {showFlowButton && date ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => flowActivate(date, activeBlockId!)}
+                aria-label="Fluir"
+                title="Go With The Flow"
+                className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+              >
+                <Waves size={16} />
+              </motion.button>
+            ) : null}
             </div>
           </div>
 
@@ -489,7 +612,18 @@ export default function TimelineView() {
             </motion.button>
           </div>
           <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <PomodoroTimer />
+            {showFlowButton && date ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => flowActivate(date, activeBlockId!)}
+                aria-label="Fluir"
+                title="Go With The Flow"
+                className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+              >
+                <Waves size={16} />
+              </motion.button>
+            ) : null}
           </div>
         </div>
 
@@ -610,7 +744,6 @@ export default function TimelineView() {
             >
               <ClipboardList size={18} />
             </motion.button>
-            <PomodoroTimer />
           </div>
         </div>
 
@@ -727,7 +860,6 @@ export default function TimelineView() {
           >
             <ClipboardList size={18} />
           </motion.button>
-          <PomodoroTimer />
         </div>
       </div>
 
