@@ -9,6 +9,7 @@ const { autoUpdater } = pkg
 import { registerSyncHandlers } from './ipc/syncHandlers'
 import { registerSiteBlockerHandlers } from './ipc/siteBlockerHandlers'
 import { registerGoogleCalendarHandlers } from './ipc/googleCalendarHandlers'
+import { startIdleMonitor } from './ipc/idleHandlers'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -230,6 +231,7 @@ rm -rf "$TEMP_DIR"
     Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
 
     createWindow()
+    startIdleMonitor()
 
     tray = new Tray(createTrayIcon())
     tray.setTitle('')

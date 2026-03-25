@@ -21,6 +21,7 @@ import { useClipboardStore } from './stores/clipboardStore'
 import ClipboardBar from './components/ClipboardBar'
 import { useSiteBlockerStore } from './stores/siteBlockerStore'
 import { usePomodoroStore } from './stores/pomodoroStore'
+import { playIdleWarningSound } from './services/notificationSound'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
 import { startPeriodicSync, stopPeriodicSync } from './services/googleCalendarSync'
 import { useGoogleCalendarStore } from './stores/googleCalendarStore'
@@ -333,6 +334,50 @@ export default function App() {
 
     handleStatusChange()
   }, [flowIsActiveApp, flowStartedApp, flowPhaseApp, blockDuringPomodoro, blockedSites, setIsBlocking])
+
+  // Idle detection: sound warning, auto-pause, auto-resume
+  useEffect(() => {
+    if (!window.bloc?.idle) return
+
+    const cleanupWarning = window.bloc.idle.onWarning(() => {
+      playIdleWarningSound()
+    })
+
+    const cleanupTimeout = window.bloc.idle.onTimeout(() => {
+      const pomodoroState = usePomodoroStore.getState()
+      if (pomodoroState.status !== 'idle' && !pomodoroState.isPaused) {
+        pomodoroState.autoPause()
+      }
+
+      const flowState = useFlowStore.getState()
+      if (flowState.isActive && flowState.started && !flowState.isPaused) {
+        flowState.autoPause()
+      }
+
+      new Notification('Bloc \u2014 Inatividade detectada', {
+        body: 'O temporizador foi pausado automaticamente.',
+        silent: true
+      })
+    })
+
+    const cleanupActive = window.bloc.idle.onActive(() => {
+      const pomodoroState = usePomodoroStore.getState()
+      if (pomodoroState.autoPaused) {
+        pomodoroState.autoResume()
+      }
+
+      const flowState = useFlowStore.getState()
+      if (flowState.autoPaused) {
+        flowState.autoResume()
+      }
+    })
+
+    return () => {
+      cleanupWarning()
+      cleanupTimeout()
+      cleanupActive()
+    }
+  }, [])
 
   // Cleanup old distractions on mount
   useEffect(() => {

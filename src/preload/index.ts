@@ -79,6 +79,23 @@ if (process.contextIsolated) {
           return () => ipcRenderer.removeListener('stealthy:changed', handler)
         }
       },
+      idle: {
+        onWarning: (callback: (idleSeconds: number) => void) => {
+          const handler = (_event: Electron.IpcRendererEvent, idleSeconds: number) => callback(idleSeconds)
+          ipcRenderer.on('idle:warning', handler)
+          return () => { ipcRenderer.removeListener('idle:warning', handler) }
+        },
+        onTimeout: (callback: (idleSeconds: number) => void) => {
+          const handler = (_event: Electron.IpcRendererEvent, idleSeconds: number) => callback(idleSeconds)
+          ipcRenderer.on('idle:timeout', handler)
+          return () => { ipcRenderer.removeListener('idle:timeout', handler) }
+        },
+        onActive: (callback: (idleSeconds: number) => void) => {
+          const handler = (_event: Electron.IpcRendererEvent, idleSeconds: number) => callback(idleSeconds)
+          ipcRenderer.on('idle:active', handler)
+          return () => { ipcRenderer.removeListener('idle:active', handler) }
+        }
+      },
       gcal: {
         startAuth: () => ipcRenderer.invoke('gcal:start-auth'),
         isAuthenticated: () => ipcRenderer.invoke('gcal:is-authenticated'),

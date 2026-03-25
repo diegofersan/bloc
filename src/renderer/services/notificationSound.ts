@@ -33,3 +33,8 @@ export function playBreakDoneSound() {
 export function playCountdownTick() {
   playTone(880, 0.05, 'sine', 0.08)
 }
+
+export function playIdleWarningSound() {
+  playTone(440, 0.2, 'sine', 0.15)
+  setTimeout(() => playTone(330, 0.3, 'sine', 0.15), 220)
+}

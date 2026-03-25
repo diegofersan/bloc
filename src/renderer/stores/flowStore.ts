@@ -31,6 +31,7 @@ interface FlowState {
   currentIndex: number
   originalBlocks: OriginalBlock[]
   isPaused: boolean
+  autoPaused: boolean
 
   // Pomodoro-style timer
   phase: FlowPhase
@@ -54,6 +55,8 @@ interface FlowState {
   skipCurrentTask: () => void
   pause: () => void
   resume: () => void
+  autoPause: () => void
+  autoResume: () => void
   getCurrentItem: () => FlowQueueItem | null
   getTaskElapsedSeconds: () => number
   getSecondsRemaining: () => number
@@ -103,6 +106,7 @@ const IDLE_STATE = {
   currentIndex: -1,
   originalBlocks: [] as OriginalBlock[],
   isPaused: false,
+  autoPaused: false,
   phase: 'working' as FlowPhase,
   secondsRemaining: 0,
   totalSeconds: 0,
@@ -377,6 +381,7 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
 
     set({
       isPaused: true,
+      autoPaused: false,
       secondsRemaining: remaining,
       expectedEndAt: null,
       startedAt: null,
@@ -392,6 +397,40 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
     const now = Date.now()
     set({
       isPaused: false,
+      autoPaused: false,
+      startedAt: now,
+      expectedEndAt: now + secondsRemaining * 1000,
+      taskTimerStartedAt: phase === 'working' ? now : null
+    })
+  },
+
+  autoPause: () => {
+    const { isActive, started, isPaused, expectedEndAt } = get()
+    if (!isActive || !started || isPaused || !expectedEndAt) return
+
+    const remaining = Math.max(0, Math.round((expectedEndAt - Date.now()) / 1000))
+    const taskElapsed = get().getTaskElapsedSeconds()
+
+    set({
+      isPaused: true,
+      autoPaused: true,
+      secondsRemaining: remaining,
+      expectedEndAt: null,
+      startedAt: null,
+      taskAccumulatedSeconds: taskElapsed,
+      taskTimerStartedAt: null
+    })
+  },
+
+  autoResume: () => {
+    if (!get().autoPaused) return
+    const { isActive, isPaused, secondsRemaining, phase } = get()
+    if (!isActive || !isPaused) return
+
+    const now = Date.now()
+    set({
+      isPaused: false,
+      autoPaused: false,
       startedAt: now,
       expectedEndAt: now + secondsRemaining * 1000,
       taskTimerStartedAt: phase === 'working' ? now : null

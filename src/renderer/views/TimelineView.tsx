@@ -278,7 +278,7 @@ export default function TimelineView() {
   // Flow (Go With The Flow) state
   const flowIsActive = useFlowStore((s) => s.isActive)
   const flowActivate = useFlowStore((s) => s.activate)
-  const dayBlocks = useTimeBlockStore((s) => s.blocks[date ?? ''] ?? [])
+  const dayBlocks = useTimeBlockStore((s) => s.blocks[date ?? '']) ?? EMPTY_BLOCKS
   const showFlowButton = !flowIsActive && dayBlocks.length > 0
 
   // Distractions (count for tab badges)
