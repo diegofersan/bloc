@@ -53,6 +53,7 @@ interface FlowState {
   tick: () => void
   completeCurrentTask: () => void
   skipCurrentTask: () => void
+  jumpToBlock: (blockId: string) => void
   pause: () => void
   resume: () => void
   autoPause: () => void
@@ -353,7 +354,11 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
       timeSpentSeconds: taskElapsed
     })
 
-    const nextIndex = newQueue.findIndex((q) => q.status === 'pending')
+    // Stay within the same block
+    let nextIndex = newQueue.findIndex((q) => q.blockId === blockId && q.status === 'pending')
+    if (nextIndex === -1) {
+      nextIndex = newQueue.findIndex((q) => q.status === 'pending')
+    }
 
     if (nextIndex === -1) {
       set({ ...IDLE_STATE, queue: newQueue })
@@ -368,6 +373,39 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
       currentIndex: nextIndex,
       taskTimerStartedAt: phase === 'working' ? now : null,
       taskAccumulatedSeconds: 0,
+      lastCascadedMinutes: 0
+    })
+  },
+
+  jumpToBlock: (blockId: string) => {
+    const { isActive, started, currentIndex, queue, phase } = get()
+    if (!isActive || !started || currentIndex < 0) return
+
+    const newQueue = [...queue]
+
+    // Save elapsed time on current task and revert to pending
+    const taskElapsed = get().getTaskElapsedSeconds()
+    newQueue[currentIndex] = {
+      ...newQueue[currentIndex],
+      status: 'pending',
+      timeSpentSeconds: taskElapsed
+    }
+
+    // Find first pending task in the target block
+    const nextIndex = newQueue.findIndex(
+      (q) => q.blockId === blockId && q.status === 'pending'
+    )
+    if (nextIndex === -1) return
+
+    newQueue[nextIndex] = { ...newQueue[nextIndex], status: 'active' }
+
+    const now = Date.now()
+    const accumulated = newQueue[nextIndex].timeSpentSeconds
+    set({
+      queue: newQueue,
+      currentIndex: nextIndex,
+      taskTimerStartedAt: phase === 'working' ? now : null,
+      taskAccumulatedSeconds: accumulated,
       lastCascadedMinutes: 0
     })
   },

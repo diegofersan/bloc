@@ -37,6 +37,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const started = useFlowStore((s) => s.started)
   const startFlow = useFlowStore((s) => s.start)
   const deactivate = useFlowStore((s) => s.deactivate)
+  const jumpToBlock = useFlowStore((s) => s.jumpToBlock)
   const taskTimerStartedAt = useFlowStore((s) => s.taskTimerStartedAt)
   const taskAccumulatedSeconds = useFlowStore((s) => s.taskAccumulatedSeconds)
   const allTasks = useTaskStore((s) => s.tasks)
@@ -320,6 +321,9 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
           {blockGroups.map(({ block, items }) => {
             const blockColor = BLOCK_COLORS[block.color] || BLOCK_COLORS.indigo
             const isDropTargetBlock = dropTarget?.blockId === block.id
+            const isActiveBlock = started && currentIndex >= 0 && queue[currentIndex]?.blockId === block.id
+            const hasPendingTasks = items.some((i) => i.item.status === 'pending')
+            const canJump = started && !isActiveBlock && hasPendingTasks
 
             return (
               <div
@@ -330,7 +334,10 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                 onDrop={() => handleDrop(block.id, items.length)}
               >
                 {/* Block header */}
-                <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+                <div
+                  className={`flex items-center justify-between px-3 pt-2.5 pb-1 ${canJump ? 'cursor-pointer hover:bg-white/5 rounded-t-xl transition-colors' : ''}`}
+                  onClick={canJump ? () => jumpToBlock(block.id) : undefined}
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <div
                       className="w-2 h-2 rounded-full shrink-0"
@@ -344,7 +351,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                     </span>
                   </div>
                   <button
-                    onClick={() => handleStartAddTask(block.id)}
+                    onClick={(e) => { e.stopPropagation(); handleStartAddTask(block.id) }}
                     className="p-0.5 rounded hover:bg-white/10 transition-colors"
                     title="Adicionar tarefa"
                   >
@@ -517,6 +524,14 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                           >
                             {item.estimatedMinutes ? formatEstimate(item.estimatedMinutes) : '+ tempo'}
                           </button>
+                        ) : isCompleted && item.timeSpentSeconds > 0 ? (
+                          <span className="shrink-0 text-[10px] text-text-muted tabular-nums">
+                            {item.timeSpentSeconds < 60
+                              ? `${item.timeSpentSeconds}s`
+                              : item.timeSpentSeconds < 3600
+                                ? `${Math.round(item.timeSpentSeconds / 60)}m`
+                                : `${Math.floor(item.timeSpentSeconds / 3600)}h${Math.round((item.timeSpentSeconds % 3600) / 60)}m`}
+                          </span>
                         ) : null}
                       </div>
                     )
