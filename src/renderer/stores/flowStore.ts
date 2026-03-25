@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { format } from 'date-fns'
 import { useTaskStore } from './taskStore'
 import { useTimeBlockStore } from './timeBlockStore'
@@ -119,7 +120,7 @@ const IDLE_STATE = {
   lastCascadedMinutes: 0
 }
 
-export const useFlowStore = create<FlowState>()((set, get) => ({
+export const useFlowStore = create<FlowState>()(persist((set, get) => ({
   ...IDLE_STATE,
 
   // Prepare flow: build queue from all blocks of the day, show summary
@@ -132,7 +133,19 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
     const blocks = useTimeBlockStore.getState().blocks[date] || []
     const snapshot = blocks.map((b) => ({ id: b.id, startTime: b.startTime, endTime: b.endTime }))
 
-    const queue = buildQueue(date)
+    const pendingQueue = buildQueue(date)
+
+    // Preserve completed items from previous session on the same date
+    const prev = get()
+    const completedItems = prev.date === date
+      ? prev.queue.filter((q) => q.status === 'completed')
+      : []
+
+    // Merge: completed first (in original order), then pending (excluding already completed tasks)
+    const completedTaskIds = new Set(completedItems.map((q) => `${q.blockKey}::${q.taskId}`))
+    const newPending = pendingQueue.filter((q) => !completedTaskIds.has(`${q.blockKey}::${q.taskId}`))
+    const queue = [...completedItems, ...newPending]
+
     if (queue.length === 0) return
 
     set({
@@ -492,6 +505,14 @@ export const useFlowStore = create<FlowState>()((set, get) => ({
     if (isPaused || !expectedEndAt) return secondsRemaining
     return Math.max(0, Math.round((expectedEndAt - Date.now()) / 1000))
   }
+}), {
+  name: 'bloc-flow',
+  partialize: (state) => ({
+    date: state.date,
+    queue: state.queue,
+    originalBlocks: state.originalBlocks,
+    completedPomodoros: state.completedPomodoros
+  })
 }))
 
 // Cascade: push subsequent blocks forward when a task overflows.
