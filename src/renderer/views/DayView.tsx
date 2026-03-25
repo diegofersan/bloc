@@ -1,133 +1,29 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import { useClipboardStore } from '../stores/clipboardStore'
 import TaskEditor from '../components/TaskEditor'
-import DistractionItem from '../components/DistractionItem'
+import DistractionSidebar from '../components/DistractionSidebar'
 import PomodoroTimer from '../components/PomodoroTimer'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 
 function DistractionPanel({ date }: { date: string }) {
-  const distractionInputRef = useRef<HTMLInputElement>(null)
-  const [inputValue, setInputValue] = useState('')
-  const allDistractions = useTaskStore((s) => s.distractions)
-  const addDistraction = useTaskStore((s) => s.addDistraction)
-  const convertToTask = useTaskStore((s) => s.convertToTask)
-
-  const distractions = (allDistractions[date] || []).filter((d) => d.status === 'pending')
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && inputValue.trim()) {
-      addDistraction(date, inputValue.trim())
-      setInputValue('')
-    }
-  }
-
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="shrink-0 px-5 pt-[58px] pb-4">
-        <div className="flex items-center gap-2 mb-5">
-          <h2 className="text-xs font-medium text-text-muted/70 uppercase tracking-wider">
-            Distrações
-          </h2>
-          {distractions.length > 0 && (
-            <span className="text-xs font-medium text-distraction bg-distraction/15 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1.5">
-              {distractions.length}
-            </span>
-          )}
-        </div>
-        <input
-          ref={distractionInputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Anotar distração..."
-          className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
-        />
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
-        {distractions.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-text-muted/50 text-xs text-center leading-relaxed">
-              Capture pensamentos aqui...<br />
-              <span className="text-xs">⌘⇧D para captura rápida</span>
-            </p>
-          </div>
-        ) : (
-          <AnimatePresence>
-            {distractions.map((d) => (
-              <DistractionItem
-                key={d.id}
-                distraction={d}
-                date={date}
-                onConvert={(id) => convertToTask(date, id, date)}
-              />
-            ))}
-          </AnimatePresence>
-        )}
+    <div className="h-full flex flex-col">
+      <div className="shrink-0 h-[50px]" />
+      <div className="flex-1 min-h-0">
+        <DistractionSidebar date={date} showHeader />
       </div>
     </div>
   )
 }
 
-/** Narrow variant of DistractionPanel — no top padding/title (tab bar handles that) */
 function DistractionPanelNarrow({ date }: { date: string }) {
-  const [inputValue, setInputValue] = useState('')
-  const allDistractions = useTaskStore((s) => s.distractions)
-  const addDistraction = useTaskStore((s) => s.addDistraction)
-  const convertToTask = useTaskStore((s) => s.convertToTask)
-
-  const distractions = (allDistractions[date] || []).filter((d) => d.status === 'pending')
-
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter' && inputValue.trim()) {
-      addDistraction(date, inputValue.trim())
-      setInputValue('')
-    }
-  }
-
-  return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="shrink-0 px-3 pt-2 pb-3">
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Anotar distração..."
-          className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
-        />
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 pb-6">
-        {distractions.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-text-muted/50 text-xs text-center leading-relaxed">
-              Capture pensamentos aqui...<br />
-              <span className="text-xs">⌘⇧D para captura rápida</span>
-            </p>
-          </div>
-        ) : (
-          <AnimatePresence>
-            {distractions.map((d) => (
-              <DistractionItem
-                key={d.id}
-                distraction={d}
-                date={date}
-                onConvert={(id) => convertToTask(date, id, date)}
-              />
-            ))}
-          </AnimatePresence>
-        )}
-      </div>
-    </div>
-  )
+  return <DistractionSidebar date={date} showHeader={false} />
 }
 
 const EMPTY_TASKS: Task[] = []

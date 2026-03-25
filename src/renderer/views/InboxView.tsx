@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, X, ArrowRight, Inbox, ListTodo, Eye, EyeOff, Clock } from 'lucide-react'
+import { ArrowLeft, Calendar, X, Inbox, ListTodo, Eye, EyeOff, Clock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -84,8 +84,7 @@ export default function InboxView() {
 
 function InboxTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnType<typeof useNavigate> }) {
   const getPendingDistractions = useTaskStore((s) => s.getPendingDistractions)
-  const convertToTask = useTaskStore((s) => s.convertToTask)
-  const dismissDistraction = useTaskStore((s) => s.dismissDistraction)
+  const removeDistraction = useTaskStore((s) => s.removeDistraction)
 
   const pending = getPendingDistractions()
 
@@ -99,14 +98,6 @@ function InboxTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
     return Object.entries(groups).sort(([a], [b]) => b.localeCompare(a))
   }, [pending])
 
-  const today = format(new Date(), 'yyyy-MM-dd')
-
-  function handleConvertAll() {
-    for (const d of pending) {
-      convertToTask(d._date, d.id, today)
-    }
-  }
-
   return (
     <div className={`flex-1 overflow-y-auto pb-8 ${isNarrow ? 'px-3' : 'pl-5 pr-6'}`}>
       <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-4 pt-4">
@@ -115,17 +106,10 @@ function InboxTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
 
       {pending.length > 0 ? (
         <>
-          <div className={`flex mb-6 ${isNarrow ? 'flex-col gap-2' : 'items-center justify-between'}`}>
+          <div className="mb-6">
             <p className="text-sm text-text-muted">
               {pending.length} {pending.length === 1 ? 'distração por processar' : 'distrações por processar'}
             </p>
-            <button
-              onClick={handleConvertAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-accent bg-accent-subtle rounded-lg hover:bg-accent/10 transition-colors"
-            >
-              <ArrowRight size={12} />
-              Converter tudo para hoje
-            </button>
           </div>
 
           {grouped.map(([date, items]) => (
@@ -150,23 +134,8 @@ function InboxTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
                     <span className="flex-1 text-sm text-text-primary">{d.text}</span>
 
                     <button
-                      onClick={() => convertToTask(d._date, d.id, today)}
-                      className={`shrink-0 px-2 py-1 text-xs font-medium text-accent bg-accent-subtle rounded hover:bg-accent/10 transition-colors ${isNarrow ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
-                    >
-                      Hoje
-                    </button>
-
-                    <button
-                      onClick={() => navigate(`/day/${d._date}`)}
-                      aria-label="Escolher data"
-                      className={`shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all ${isNarrow ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
-                    >
-                      <Calendar size={14} className="text-text-muted" />
-                    </button>
-
-                    <button
-                      onClick={() => dismissDistraction(d._date, d.id)}
-                      aria-label="Descartar distração"
+                      onClick={() => removeDistraction(d._date, d.id)}
+                      aria-label="Remover distração"
                       className={`shrink-0 p-1 rounded hover:bg-bg-tertiary transition-all ${isNarrow ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
                     >
                       <X size={14} className="text-text-muted hover:text-text-secondary transition-colors" />

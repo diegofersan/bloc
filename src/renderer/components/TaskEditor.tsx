@@ -76,12 +76,20 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
   const handleClickEmpty = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.ghostArea) return
+      // If the last task is already empty, just focus it instead of creating another
+      const currentTasks = useTaskStore.getState().tasks[date] || []
+      const last = currentTasks[currentTasks.length - 1]
+      if (last && last.text.trim() === '') {
+        // Force re-focus even if already the active task (blur may have cleared focus)
+        setActiveTaskId(null)
+        requestAnimationFrame(() => setActiveTaskId(last.id))
+        return
+      }
       addTask(date, '')
       requestAnimationFrame(() => {
-        const store = useTaskStore.getState()
-        const dateTasks = store.tasks[date] || []
-        const last = dateTasks[dateTasks.length - 1]
-        if (last) setActiveTaskId(last.id)
+        const dateTasks = useTaskStore.getState().tasks[date] || []
+        const newLast = dateTasks[dateTasks.length - 1]
+        if (newLast) setActiveTaskId(newLast.id)
       })
     },
     [date, addTask]
@@ -204,16 +212,12 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
   )
 
   const handleBlurCleanup = useCallback(
-    (taskId: string, text: string) => {
-      if (text.trim() === '') {
-        const topIndex = tasks.findIndex((t) => t.id === taskId)
-        // Only auto-remove if it's the last task and empty
-        if (topIndex === tasks.length - 1 && tasks.length > 1) {
-          removeTask(date, taskId)
-        }
-      }
+    (_taskId: string, _text: string) => {
+      // No-op: empty tasks are removed explicitly via backspace/delete,
+      // not on blur. Auto-removing on blur races with click handlers
+      // and causes tasks to be deleted and recreated unexpectedly.
     },
-    [date, tasks, removeTask]
+    []
   )
 
   return (
@@ -343,11 +347,10 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
               />
             ))}
 
-            {/* Ghost area below tasks — click to add new */}
+            {/* Ghost area below tasks — click to add new (handled by parent onClick) */}
             <div
               className="min-h-[100px] flex-1"
               data-ghost-area="true"
-              onClick={handleClickEmpty}
             />
           </>
         )}

@@ -1,36 +1,15 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Check, Circle, Play, Plus } from 'lucide-react'
-import { useFlowStore } from '../stores/flowStore'
+import { Check, Circle, GripVertical, Play, Plus } from 'lucide-react'
+import { useFlowStore, type FlowQueueItem } from '../stores/flowStore'
 import { useTaskStore } from '../stores/taskStore'
 import { useTimeBlockStore } from '../stores/timeBlockStore'
 import { formatEstimate } from '../utils/taskEstimates'
-import { useSettingsStore, formatTzOffset, getTzOffsetMinutes } from '../stores/settingsStore'
 import type { TimeBlock } from '../stores/timeBlockStore'
 import type { Task } from '../stores/taskStore'
 
 const EMPTY_BLOCKS: TimeBlock[] = []
 const EMPTY_TASKS: Task[] = []
-
-function formatTime(minutes: number): string {
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-}
-
-// Match timeline grid constants
-const START_HOUR = 1
-const HOUR_HEIGHT = 120 // taller than main timeline (60) for better task readability
-const HOURS_ORDER = Array.from({ length: 24 }, (_, i) => (i + START_HOUR) % 24)
-const TOTAL_GRID_HEIGHT = 24 * HOUR_HEIGHT
-
-function timeToY(minutes: number): number {
-  const shifted = ((minutes - START_HOUR * 60) + 1440) % 1440
-  return (shifted / 60) * HOUR_HEIGHT
-}
-
-const GUTTER_WIDTH = 56
-const SECONDARY_GUTTER = 48
 
 const BLOCK_COLORS: Record<string, string> = {
   indigo: '#6366f1',
@@ -40,6 +19,12 @@ const BLOCK_COLORS: Record<string, string> = {
   sky: '#0ea5e9',
   violet: '#8b5cf6',
   slate: '#64748b'
+}
+
+function formatTime(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 interface FlowQueueViewProps {
@@ -57,89 +42,258 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const allTasks = useTaskStore((s) => s.tasks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const blocks = allBlocks[date] ?? EMPTY_BLOCKS
+  const toggleTask = useTaskStore((s) => s.toggleTask)
+  const moveTask = useTaskStore((s) => s.moveTask)
+  const addTask = useTaskStore((s) => s.addTask)
+  const updateTaskEstimate = useTaskStore((s) => s.updateTaskEstimate)
 
-  // Flow block info
-  const flowBlockId = useFlowStore((s) => s.blockId)
-  const flowBlock = blocks.find((b) => b.id === flowBlockId) || null
-  const blockColor = flowBlock ? BLOCK_COLORS[flowBlock.color] || BLOCK_COLORS.indigo : '#94a3b8'
-  const blockKey = flowBlockId ? `${date}__block__${flowBlockId}` : ''
+  // Inline estimate editing
+  const [editingEstimate, setEditingEstimate] = useState<{ queueIndex: number; blockKey: string; taskId: string } | null>(null)
+  const [estimateInput, setEstimateInput] = useState('')
+  const estimateInputRef = useRef<HTMLInputElement>(null)
 
-  // Other blocks (not the flow block) to show as context
-  const otherBlocks = useMemo(() =>
-    blocks.filter((b) => b.id !== flowBlockId).sort((a, b) => a.startTime - b.startTime),
-    [blocks, flowBlockId]
+  useEffect(() => {
+    if (editingEstimate && estimateInputRef.current) {
+      estimateInputRef.current.focus()
+      estimateInputRef.current.select()
+    }
+  }, [editingEstimate])
+
+  const handleEstimateClick = useCallback((queueIndex: number, blockKey: string, taskId: string, currentMinutes: number | null) => {
+    setEditingEstimate({ queueIndex, blockKey, taskId })
+    setEstimateInput(currentMinutes?.toString() || '')
+  }, [])
+
+  const handleEstimateCommit = useCallback(() => {
+    if (!editingEstimate) return
+    const val = parseInt(estimateInput, 10)
+    if (!isNaN(val) && val > 0) {
+      updateTaskEstimate(editingEstimate.blockKey, editingEstimate.taskId, val)
+      // Sync queue
+      const flowState = useFlowStore.getState()
+      const newQueue = flowState.queue.map((q, i) =>
+        i === editingEstimate.queueIndex ? { ...q, estimatedMinutes: val } : q
+      )
+      useFlowStore.setState({ queue: newQueue })
+    }
+    setEditingEstimate(null)
+    setEstimateInput('')
+  }, [editingEstimate, estimateInput, updateTaskEstimate])
+
+  // Blocks sorted by time
+  const sortedBlocks = useMemo(
+    () => [...blocks].sort((a, b) => a.startTime - b.startTime),
+    [blocks]
   )
 
-  // Indexed queue items
-  const indexedQueue = useMemo(() =>
-    queue.map((item, index) => ({ ...item, index })),
-    [queue]
-  )
+  // Group queue items by blockId, preserving order within each block
+  const blockGroups = useMemo(() => {
+    const groups: Record<string, { block: TimeBlock; items: { item: FlowQueueItem; queueIndex: number }[] }> = {}
+    for (const b of sortedBlocks) {
+      groups[b.id] = { block: b, items: [] }
+    }
+    queue.forEach((item, queueIndex) => {
+      if (groups[item.blockId]) {
+        groups[item.blockId].items.push({ item, queueIndex })
+      }
+    })
+    return sortedBlocks.map((b) => groups[b.id]).filter((g) => g !== undefined)
+  }, [queue, sortedBlocks])
 
   // Stats
   const completed = queue.filter((q) => q.status === 'completed').length
   const total = queue.length
 
-  // Block actions
-  const updateBlock = useTimeBlockStore((s) => s.updateBlock)
-
-  // Task actions
-  const toggleTask = useTaskStore((s) => s.toggleTask)
-  const updateTaskEstimate = useTaskStore((s) => s.updateTaskEstimate)
-  const addTask = useTaskStore((s) => s.addTask)
-  const [taskText, setTaskText] = useState('')
-  const [showAddTask, setShowAddTask] = useState(false)
-  const [editingEstimateId, setEditingEstimateId] = useState<string | null>(null)
-  const [estimateInput, setEstimateInput] = useState('')
-  const estimateInputRef = useRef<HTMLInputElement>(null)
-  const taskRef = useRef<HTMLInputElement>(null)
-
-  const addTaskBlockKey = blockKey || `${date}__block__${blocks[0]?.id || ''}`
-
+  // Live task elapsed (re-renders every second when active)
+  const [, setTick] = useState(0)
   useEffect(() => {
-    if (editingEstimateId && estimateInputRef.current) {
-      estimateInputRef.current.focus()
-      estimateInputRef.current.select()
-    }
-  }, [editingEstimateId])
+    if (!started || !taskTimerStartedAt) return
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [started, taskTimerStartedAt])
 
-  const handleToggleTask = useCallback((blockKey: string, taskId: string) => {
-    toggleTask(blockKey, taskId)
-  }, [toggleTask])
+  const getTaskElapsed = useCallback(
+    (queueIndex: number) => {
+      if (queueIndex !== currentIndex) return queue[queueIndex]?.timeSpentSeconds ?? 0
+      if (!taskTimerStartedAt) return taskAccumulatedSeconds
+      return taskAccumulatedSeconds + Math.floor((Date.now() - taskTimerStartedAt) / 1000)
+    },
+    [currentIndex, taskTimerStartedAt, taskAccumulatedSeconds, queue]
+  )
 
-  const handleEstimateClick = useCallback((taskId: string, currentMinutes: number | null) => {
-    setEditingEstimateId(taskId)
-    setEstimateInput(currentMinutes?.toString() || '')
+  // Drag state: track which task is being dragged
+  const dragRef = useRef<{ queueIndex: number; blockId: string } | null>(null)
+  const [dragQueueIndex, setDragQueueIndex] = useState<number | null>(null)
+  const [dropTarget, setDropTarget] = useState<{ blockId: string; position: number } | null>(null)
+
+  const handleDragStart = useCallback((queueIndex: number, blockId: string) => {
+    const item = queue[queueIndex]
+    if (item.status === 'completed') return
+    dragRef.current = { queueIndex, blockId }
+    setDragQueueIndex(queueIndex)
+  }, [queue])
+
+  const handleTaskDragOver = useCallback((e: React.DragEvent, blockId: string, position: number) => {
+    e.preventDefault()
+    setDropTarget({ blockId, position })
   }, [])
 
-  const handleEstimateCommit = useCallback((blockKey: string, taskId: string) => {
-    const val = parseInt(estimateInput, 10)
-    if (!isNaN(val) && val > 0) {
-      updateTaskEstimate(blockKey, taskId, val)
-      const flowState = useFlowStore.getState()
-      const newQueue = flowState.queue.map((q) =>
-        q.taskId === taskId && q.blockKey === blockKey ? { ...q, estimatedMinutes: val } : q
-      )
-      useFlowStore.setState({ queue: newQueue })
+  const handleBlockDragOver = useCallback((e: React.DragEvent, blockId: string) => {
+    e.preventDefault()
+    // Drop at end of block
+    const group = blockGroups.find((g) => g.block.id === blockId)
+    setDropTarget({ blockId, position: group?.items.length ?? 0 })
+  }, [blockGroups])
+
+  const handleDrop = useCallback((targetBlockId: string, targetPosition: number) => {
+    if (!dragRef.current) return
+    const { queueIndex: sourceQueueIndex, blockId: sourceBlockId } = dragRef.current
+    const sourceItem = queue[sourceQueueIndex]
+    if (!sourceItem) return
+
+    const sourceBlockKey = sourceItem.blockKey
+    const targetBlockKey = `${date}__block__${targetBlockId}`
+
+    // Move task in task store if changing blocks
+    if (sourceBlockId !== targetBlockId) {
+      moveTask(sourceBlockKey, targetBlockKey, sourceItem.taskId)
     }
-    setEditingEstimateId(null)
-    setEstimateInput('')
-  }, [estimateInput, updateTaskEstimate])
+
+    // Rebuild queue: update the moved item's block info and reorder
+    const newQueue = [...queue]
+    const [moved] = newQueue.splice(sourceQueueIndex, 1)
+    const updatedItem: FlowQueueItem = {
+      ...moved,
+      blockId: targetBlockId,
+      blockKey: targetBlockKey
+    }
+
+    // Find insertion point in the queue: after the Nth item of the target block
+    let insertAt = 0
+    let blockItemCount = 0
+    for (let i = 0; i < newQueue.length; i++) {
+      if (newQueue[i].blockId === targetBlockId) {
+        blockItemCount++
+        if (blockItemCount <= targetPosition) {
+          insertAt = i + 1
+        }
+      }
+    }
+    // If no items in target block yet, insert after the last item of a preceding block
+    if (blockItemCount === 0) {
+      const targetBlockOrder = sortedBlocks.findIndex((b) => b.id === targetBlockId)
+      for (let i = 0; i < newQueue.length; i++) {
+        const itemBlockOrder = sortedBlocks.findIndex((b) => b.id === newQueue[i].blockId)
+        if (itemBlockOrder <= targetBlockOrder) {
+          insertAt = i + 1
+        }
+      }
+    }
+
+    newQueue.splice(insertAt, 0, updatedItem)
+
+    // Recalculate currentIndex
+    const movedIsActive = currentIndex >= 0 && sourceQueueIndex === currentIndex
+
+    if (movedIsActive) {
+      // Save elapsed time on the moved task and revert it to pending
+      const elapsed = useFlowStore.getState().getTaskElapsedSeconds()
+      const movedIdx = newQueue.findIndex(
+        (q) => q.taskId === updatedItem.taskId && q.blockKey === updatedItem.blockKey
+      )
+      if (movedIdx >= 0) {
+        newQueue[movedIdx] = {
+          ...newQueue[movedIdx],
+          status: 'pending',
+          timeSpentSeconds: (newQueue[movedIdx].timeSpentSeconds || 0) + elapsed
+        }
+      }
+
+      // Activate the next pending task (new top of queue)
+      const nextPending = newQueue.findIndex((q) => q.status === 'pending')
+      if (nextPending >= 0) {
+        newQueue[nextPending] = { ...newQueue[nextPending], status: 'active' }
+        const now = Date.now()
+        useFlowStore.setState({
+          queue: newQueue,
+          currentIndex: nextPending,
+          taskTimerStartedAt: useFlowStore.getState().phase === 'working' ? now : null,
+          taskAccumulatedSeconds: 0
+        })
+      } else {
+        useFlowStore.setState({ queue: newQueue, currentIndex: -1 })
+      }
+    } else {
+      let newCurrentIndex = -1
+      if (currentIndex >= 0) {
+        const activeItem = queue[currentIndex]
+        newCurrentIndex = newQueue.findIndex(
+          (q) => q.taskId === activeItem.taskId && q.blockKey === activeItem.blockKey
+        )
+        if (newCurrentIndex === -1) {
+          newCurrentIndex = newQueue.findIndex((q) => q.taskId === activeItem.taskId)
+        }
+      }
+
+      useFlowStore.setState({
+        queue: newQueue,
+        ...(newCurrentIndex >= 0 ? { currentIndex: newCurrentIndex } : {})
+      })
+    }
+
+    dragRef.current = null
+    setDragQueueIndex(null)
+    setDropTarget(null)
+  }, [queue, currentIndex, date, moveTask, sortedBlocks])
+
+  const handleDragEnd = useCallback(() => {
+    dragRef.current = null
+    setDragQueueIndex(null)
+    setDropTarget(null)
+  }, [])
+
+  const handleToggleTask = useCallback(
+    (blockKey: string, taskId: string) => {
+      toggleTask(blockKey, taskId)
+    },
+    [toggleTask]
+  )
+
+  // Add task per block
+  const [addingToBlock, setAddingToBlock] = useState<string | null>(null)
+  const [taskText, setTaskText] = useState('')
+  const taskInputRef = useRef<HTMLInputElement>(null)
+
+  const handleStartAddTask = useCallback((blockId: string) => {
+    setAddingToBlock(blockId)
+    setTaskText('')
+    setTimeout(() => taskInputRef.current?.focus(), 50)
+  }, [])
 
   const handleAddTask = useCallback(() => {
     const trimmed = taskText.trim()
-    if (!trimmed) return
-    addTask(addTaskBlockKey, trimmed)
+    if (!trimmed || !addingToBlock) return
 
-    const blockTasks = useTaskStore.getState().tasks[addTaskBlockKey] || []
+    const blockKey = `${date}__block__${addingToBlock}`
+    addTask(blockKey, trimmed)
+
+    const blockTasks = useTaskStore.getState().tasks[blockKey] || []
     const newTask = blockTasks[blockTasks.length - 1]
     if (newTask) {
       const flowState = useFlowStore.getState()
       const newQueue = [...flowState.queue]
-      newQueue.push({
+      // Insert at end of this block's items in the queue
+      let insertAt = newQueue.length
+      for (let i = newQueue.length - 1; i >= 0; i--) {
+        if (newQueue[i].blockId === addingToBlock) {
+          insertAt = i + 1
+          break
+        }
+      }
+      newQueue.splice(insertAt, 0, {
         taskId: newTask.id,
-        blockKey: addTaskBlockKey,
-        blockId: flowBlockId || '',
+        blockKey,
+        blockId: addingToBlock,
         estimatedMinutes: null,
         timeSpentSeconds: 0,
         status: 'pending'
@@ -148,187 +302,8 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     }
 
     setTaskText('')
-    setShowAddTask(false)
-  }, [taskText, addTaskBlockKey, addTask, flowBlockId])
-
-  // Task elapsed
-  const taskElapsed = taskTimerStartedAt
-    ? taskAccumulatedSeconds + Math.floor((Date.now() - taskTimerStartedAt) / 1000)
-    : taskAccumulatedSeconds
-
-  const MIN_TASK_HEIGHT = 32
-  const DEFAULT_TASK_MINUTES = 15
-
-  const { primaryTimezone, secondaryTimezone } = useSettingsStore()
-  const hasSecondary = secondaryTimezone !== null
-  const totalGutter = hasSecondary ? GUTTER_WIDTH + SECONDARY_GUTTER : GUTTER_WIDTH
-
-  // Current time indicator
-  const [currentMinutes, setCurrentMinutes] = useState(() => {
-    const now = new Date()
-    return now.getHours() * 60 + now.getMinutes()
-  })
-  useEffect(() => {
-    const id = setInterval(() => {
-      const now = new Date()
-      setCurrentMinutes(now.getHours() * 60 + now.getMinutes())
-    }, 60000)
-    return () => clearInterval(id)
-  }, [])
-
-  // Auto-scroll to flow block on mount
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const didScrollRef = useRef(false)
-  useEffect(() => {
-    if (didScrollRef.current || !scrollRef.current || !flowBlock) return
-    const blockY = timeToY(flowBlock.startTime)
-    scrollRef.current.scrollTop = Math.max(0, blockY - 40)
-    didScrollRef.current = true
-  }, [flowBlock])
-
-  // Drag to move flow block
-  const SNAP_MINUTES = 5
-  const isDraggingBlock = useRef(false)
-
-  const handleBlockDragStart = useCallback((e: React.MouseEvent) => {
-    if (!flowBlock || !scrollRef.current) return
-    e.preventDefault()
-    isDraggingBlock.current = true
-    const startY = e.clientY
-    const startScrollTop = scrollRef.current.scrollTop
-    const duration = flowBlock.endTime - flowBlock.startTime
-    const startTime = flowBlock.startTime
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isDraggingBlock.current || !scrollRef.current) return
-      const scrollDelta = scrollRef.current.scrollTop - startScrollTop
-      const deltaY = ev.clientY - startY + scrollDelta
-      const deltaMinutes = (deltaY / HOUR_HEIGHT) * 60
-      let newStart = startTime + deltaMinutes
-      // Snap
-      newStart = Math.round(newStart / SNAP_MINUTES) * SNAP_MINUTES
-      // Clamp to day
-      newStart = Math.max(0, Math.min(1440 - duration, newStart))
-      const newEnd = newStart + duration
-      updateBlock(date, flowBlock.id, { startTime: newStart, endTime: newEnd })
-    }
-
-    const onMouseUp = () => {
-      isDraggingBlock.current = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [flowBlock, date, updateBlock])
-
-  // Render a task item
-  function renderTaskItem(item: typeof indexedQueue[0]) {
-    const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
-    const task = blockTasks.find((t) => t.id === item.taskId)
-    if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
-    const taskLabel = task?.text || 'Tarefa'
-    const isItemActive = item.index === currentIndex
-    const isCompleted = item.status === 'completed' || task?.completed
-
-    // Time spent: live elapsed for active, persisted for stopped
-    const itemElapsed = isItemActive ? taskElapsed : item.timeSpentSeconds
-
-    let estimateLabel: string | null = null
-    if (item.estimatedMinutes && itemElapsed > 0) {
-      const remainingSec = Math.max(0, item.estimatedMinutes * 60 - itemElapsed)
-      const remainingMin = Math.ceil(remainingSec / 60)
-      estimateLabel = remainingMin > 0 ? formatEstimate(remainingMin) : '0m'
-    }
-
-    // BG opacity: starts at 20%, grows with progress toward estimate
-    let bgOpacity = '20'
-    if (isCompleted) {
-      bgOpacity = '08'
-    } else if (itemElapsed > 0 && item.estimatedMinutes) {
-      const progress = Math.min(itemElapsed / (item.estimatedMinutes * 60), 1)
-      const hex = Math.round(0x20 + progress * (0x60 - 0x20)).toString(16).padStart(2, '0')
-      bgOpacity = hex
-    } else if (itemElapsed > 0) {
-      bgOpacity = '35'
-    }
-
-    const mins = item.estimatedMinutes ?? DEFAULT_TASK_MINUTES
-    const itemHeight = Math.max((mins / 60) * HOUR_HEIGHT, MIN_TASK_HEIGHT)
-
-    return (
-      <div
-        key={`${item.blockId}-${item.taskId}`}
-        className={`flex items-start gap-2 px-2 pt-1.5 rounded-lg transition-colors ${
-          isCompleted ? 'opacity-40' : ''
-        }`}
-        style={{
-          minHeight: itemHeight,
-          backgroundColor: blockColor + bgOpacity
-        }}
-      >
-        {/* Checkbox */}
-        <button
-          className="shrink-0"
-          onClick={() => !isCompleted && handleToggleTask(item.blockKey, item.taskId)}
-        >
-          {isCompleted ? (
-            <Check size={14} className="text-success" />
-          ) : isItemActive ? (
-            <Circle size={14} className="text-violet-500 fill-violet-500 hover:text-success cursor-pointer" />
-          ) : (
-            <Circle size={14} className="text-border hover:text-success cursor-pointer" />
-          )}
-        </button>
-
-        {/* Task name */}
-        <span className={`flex-1 text-sm truncate ${
-          isCompleted
-            ? 'line-through text-text-muted'
-            : isItemActive
-              ? 'text-text-primary font-medium'
-              : 'text-text-secondary'
-        }`}>
-          {taskLabel}
-        </span>
-
-        {/* Estimate */}
-        {editingEstimateId === item.taskId ? (
-          <input
-            ref={estimateInputRef}
-            type="text"
-            value={estimateInput}
-            onChange={(e) => setEstimateInput(e.target.value.replace(/[^0-9]/g, ''))}
-            onBlur={() => handleEstimateCommit(item.blockKey, item.taskId)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleEstimateCommit(item.blockKey, item.taskId)
-              if (e.key === 'Escape') { setEditingEstimateId(null); setEstimateInput('') }
-            }}
-            placeholder="min"
-            className="w-10 text-[10px] text-center bg-bg-secondary border border-border rounded px-1 py-0.5 outline-none focus:border-violet-500/50 tabular-nums"
-            maxLength={4}
-          />
-        ) : item.estimatedMinutes ? (
-          <button
-            onClick={() => handleEstimateClick(item.taskId, item.estimatedMinutes)}
-            className={`shrink-0 text-[10px] tabular-nums px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer ${
-              isItemActive ? 'text-violet-400' : 'text-text-muted'
-            }`}
-          >
-            {estimateLabel ?? formatEstimate(item.estimatedMinutes)}
-          </button>
-        ) : (
-          <button
-            onClick={() => handleEstimateClick(item.taskId, null)}
-            className="shrink-0 text-[10px] tabular-nums text-text-muted/30 hover:text-text-muted/60 px-1.5 py-0.5 rounded hover:bg-bg-secondary cursor-pointer"
-          >
-            + tempo
-          </button>
-        )}
-      </div>
-    )
-  }
+    setAddingToBlock(null)
+  }, [taskText, addingToBlock, date, addTask])
 
   return (
     <div className="h-full flex flex-col">
@@ -337,202 +312,219 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
         <span className="text-[10px] text-text-muted tabular-nums">
           {completed}/{total} {started ? 'concluídas' : 'tarefas'}
         </span>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowAddTask((v) => !v); setTimeout(() => taskRef.current?.focus(), 50) }}
-            className="p-0.5 rounded hover:bg-bg-hover transition-colors"
-            title="Adicionar tarefa"
-          >
-            <Plus size={12} className="text-text-muted" />
-          </button>
-          {!started && (
-            <>
-              <button
-                onClick={deactivate}
-                className="text-[10px] text-text-muted hover:text-text-secondary transition-colors"
-              >
-                Cancelar
-              </button>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={startFlow}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-violet-500 text-white text-[11px] font-medium hover:bg-violet-600 transition-colors"
-              >
-                <Play size={12} />
-                Iniciar
-              </motion.button>
-            </>
-          )}
-        </div>
       </div>
 
-      {/* Add task inline */}
-      {showAddTask && (
-        <div className="shrink-0 px-5 pb-2">
-          <input
-            ref={taskRef}
-            type="text"
-            value={taskText}
-            onChange={(e) => setTaskText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAddTask()
-              if (e.key === 'Escape') { setShowAddTask(false); setTaskText('') }
-            }}
-            placeholder="Nova tarefa..."
-            className="w-full text-xs bg-bg-secondary/60 border border-border/40 rounded-md px-2 py-1.5 text-text-primary placeholder:text-text-muted outline-none focus:border-violet-500/50 transition-colors"
-            spellCheck={false}
-          />
-        </div>
-      )}
+      {/* Block groups */}
+      <div className="flex-1 overflow-y-auto px-5 pb-6">
+        <div className="flex flex-col gap-4">
+          {blockGroups.map(({ block, items }) => {
+            const blockColor = BLOCK_COLORS[block.color] || BLOCK_COLORS.indigo
+            const isDropTargetBlock = dropTarget?.blockId === block.id
 
-      {/* Full 24h grid with blocks */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="flex relative" style={{ height: TOTAL_GRID_HEIGHT }}>
-          {/* Current time indicator — spans full width */}
-          {(() => {
-            const y = timeToY(currentMinutes) + 20 /* mt-5 offset */
-            const currentTimeLabel = formatTime(currentMinutes)
             return (
-              <div className="absolute z-20 pointer-events-none" style={{ top: y, left: 0, right: 0 }}>
-                {/* Time label in gutter */}
-                <div
-                  className="absolute flex items-center justify-end pr-2"
-                  style={{ top: -8, left: 0, width: GUTTER_WIDTH, height: 16 }}
-                >
-                  <span className="text-[10px] text-error font-semibold tabular-nums select-none bg-bg-primary px-0.5 rounded leading-none">
-                    {currentTimeLabel}
-                  </span>
-                </div>
-                {/* Secondary timezone */}
-                {hasSecondary && secondaryTimezone && (
-                  <div
-                    className="absolute flex items-center justify-start pl-1"
-                    style={{ top: -8, left: GUTTER_WIDTH, width: SECONDARY_GUTTER, height: 16 }}
-                  >
-                    <span className="text-[9px] text-error/60 font-semibold tabular-nums select-none bg-bg-primary px-0.5 rounded leading-none">
-                      {(() => {
-                        const fromOffset = getTzOffsetMinutes(primaryTimezone)
-                        const toOffset = getTzOffsetMinutes(secondaryTimezone)
-                        const diff = toOffset - fromOffset
-                        const secMinutes = ((currentMinutes + diff) + 1440) % 1440
-                        return formatTime(secMinutes)
-                      })()}
+              <div
+                key={block.id}
+                className={`rounded-xl transition-all ${isDropTargetBlock ? 'ring-1 ring-white/20' : ''}`}
+                style={{ backgroundColor: blockColor + '10' }}
+                onDragOver={(e) => handleBlockDragOver(e, block.id)}
+                onDrop={() => handleDrop(block.id, items.length)}
+              >
+                {/* Block header */}
+                <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: blockColor }}
+                    />
+                    <span className="text-xs font-medium truncate" style={{ color: blockColor }}>
+                      {block.title}
+                    </span>
+                    <span className="text-[10px] text-text-muted/50 tabular-nums shrink-0">
+                      {formatTime(block.startTime)}–{formatTime(block.endTime)}
                     </span>
                   </div>
+                  <button
+                    onClick={() => handleStartAddTask(block.id)}
+                    className="p-0.5 rounded hover:bg-white/10 transition-colors"
+                    title="Adicionar tarefa"
+                  >
+                    <Plus size={12} style={{ color: blockColor + '80' }} />
+                  </button>
+                </div>
+
+                {/* Add task input for this block */}
+                {addingToBlock === block.id && (
+                  <div className="px-3 pb-2">
+                    <input
+                      ref={taskInputRef}
+                      type="text"
+                      value={taskText}
+                      onChange={(e) => setTaskText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddTask()
+                        if (e.key === 'Escape') {
+                          setAddingToBlock(null)
+                          setTaskText('')
+                        }
+                      }}
+                      onBlur={() => {
+                        if (!taskText.trim()) {
+                          setAddingToBlock(null)
+                          setTaskText('')
+                        }
+                      }}
+                      placeholder="Nova tarefa..."
+                      className="w-full text-xs bg-white/10 border border-white/10 rounded-md px-2 py-1.5 text-text-primary placeholder:text-text-muted outline-none focus:border-white/20 transition-colors"
+                      spellCheck={false}
+                    />
+                  </div>
                 )}
-                {/* Red line + dot */}
-                <div className="flex items-center" style={{ marginLeft: totalGutter - 4 }}>
-                  <div className="w-2 h-2 rounded-full bg-error shrink-0" />
-                  <div className="flex-1 h-[1.5px] bg-error/70" />
+
+                {/* Tasks */}
+                <div className="flex flex-col gap-0.5 px-1.5 pb-1.5">
+                  {items.length === 0 && (
+                    <div className="px-2 py-3 text-center">
+                      <span className="text-[10px] text-text-muted/30">Sem tarefas</span>
+                    </div>
+                  )}
+                  {items.map(({ item, queueIndex }, positionInBlock) => {
+                    const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
+                    const task = blockTasks.find((t) => t.id === item.taskId)
+                    if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
+
+                    const taskLabel = task?.text || 'Tarefa'
+                    const isActive = queueIndex === currentIndex
+                    const isCompleted = item.status === 'completed' || task?.completed
+                    const isDragging = dragQueueIndex === queueIndex
+                    const isDropHere =
+                      dropTarget?.blockId === block.id && dropTarget.position === positionInBlock && dragQueueIndex !== null && !isDragging
+
+                    // Countdown for active task (goes negative when exceeded)
+                    let countdownLabel: string | null = null
+                    let isOvertime = false
+                    const elapsed = getTaskElapsed(queueIndex)
+                    if (isActive && item.estimatedMinutes) {
+                      const remainingSec = item.estimatedMinutes * 60 - elapsed
+                      if (remainingSec >= 0) {
+                        const remainingMin = Math.ceil(remainingSec / 60)
+                        countdownLabel = formatEstimate(remainingMin)
+                      } else {
+                        const overtimeMin = Math.ceil(Math.abs(remainingSec) / 60)
+                        countdownLabel = `-${formatEstimate(overtimeMin)}`
+                        isOvertime = true
+                      }
+                    }
+
+                    // BG opacity: 20% base, grows with time consumed
+                    let bgOpacity = 0.20
+                    if (isCompleted) {
+                      bgOpacity = 0.06
+                    } else if (elapsed > 0 && item.estimatedMinutes) {
+                      const progress = Math.min(elapsed / (item.estimatedMinutes * 60), 1)
+                      bgOpacity = 0.20 + progress * 0.50
+                    } else if (elapsed > 0) {
+                      bgOpacity = 0.30
+                    }
+
+                    return (
+                      <div
+                        key={`${item.blockId}-${item.taskId}`}
+                        draggable={!isCompleted}
+                        onDragStart={() => handleDragStart(queueIndex, block.id)}
+                        onDragOver={(e) => handleTaskDragOver(e, block.id, positionInBlock)}
+                        onDrop={(e) => { e.stopPropagation(); handleDrop(block.id, positionInBlock) }}
+                        onDragEnd={handleDragEnd}
+                        className={`group flex items-center gap-2 px-3 py-2.5 rounded-lg transition-all ${
+                          isCompleted ? 'opacity-40' : ''
+                        } ${isDragging ? 'opacity-20' : ''} ${
+                          isDropHere ? 'ring-1 ring-white/30' : ''
+                        }`}
+                        style={{
+                          backgroundColor: blockColor + Math.round(bgOpacity * 255).toString(16).padStart(2, '0')
+                        }}
+                      >
+                        {/* Drag handle */}
+                        {!isCompleted && (
+                          <div className="shrink-0 opacity-0 group-hover:opacity-40 cursor-grab active:cursor-grabbing transition-opacity">
+                            <GripVertical size={12} />
+                          </div>
+                        )}
+
+                        {/* Checkbox */}
+                        <button
+                          className="shrink-0"
+                          onClick={() => handleToggleTask(item.blockKey, item.taskId)}
+                        >
+                          {isCompleted ? (
+                            <Check size={16} className="text-white/80" />
+                          ) : isActive ? (
+                            <Circle
+                              size={16}
+                              className="text-white fill-white/30 hover:text-success hover:fill-success/20 cursor-pointer"
+                            />
+                          ) : (
+                            <Circle
+                              size={16}
+                              className="text-white/60 hover:text-success hover:fill-success/20 cursor-pointer"
+                            />
+                          )}
+                        </button>
+
+                        {/* Task label */}
+                        <span
+                          className={`flex-1 text-sm truncate ${
+                            isCompleted
+                              ? 'line-through text-text-muted'
+                              : isActive
+                                ? 'text-text-primary font-medium'
+                                : 'text-text-secondary'
+                          }`}
+                        >
+                          {taskLabel}
+                        </span>
+
+                        {/* Countdown / estimate — clickable to edit */}
+                        {editingEstimate?.queueIndex === queueIndex ? (
+                          <input
+                            ref={estimateInputRef}
+                            type="text"
+                            value={estimateInput}
+                            onChange={(e) => setEstimateInput(e.target.value.replace(/[^0-9]/g, ''))}
+                            onBlur={handleEstimateCommit}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleEstimateCommit()
+                              if (e.key === 'Escape') { setEditingEstimate(null); setEstimateInput('') }
+                            }}
+                            placeholder="min"
+                            className="w-12 text-[11px] text-center bg-white/10 border border-white/20 rounded px-1 py-0.5 outline-none tabular-nums text-text-primary"
+                            maxLength={4}
+                          />
+                        ) : isActive && countdownLabel ? (
+                          <button
+                            onClick={() => handleEstimateClick(queueIndex, item.blockKey, item.taskId, item.estimatedMinutes)}
+                            className={`shrink-0 text-xs tabular-nums font-medium cursor-pointer hover:opacity-70 ${
+                              isOvertime ? 'text-error' : 'text-text-primary'
+                            }`}
+                          >
+                            {countdownLabel}
+                          </button>
+                        ) : !isCompleted ? (
+                          <button
+                            onClick={() => handleEstimateClick(queueIndex, item.blockKey, item.taskId, item.estimatedMinutes)}
+                            className={`shrink-0 tabular-nums cursor-pointer hover:opacity-70 ${
+                              item.estimatedMinutes ? 'text-[10px] text-text-secondary' : 'text-[10px] text-text-muted/30 hover:text-text-muted/60'
+                            }`}
+                          >
+                            {item.estimatedMinutes ? formatEstimate(item.estimatedMinutes) : '+ tempo'}
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )
-          })()}
-          {/* Hour gutter */}
-          <div className="shrink-0 relative mt-5" style={{ width: totalGutter, height: TOTAL_GRID_HEIGHT }}>
-            {HOURS_ORDER.map((h, visualIndex) => {
-              const y = visualIndex * HOUR_HEIGHT
-              return (
-                <div key={h}>
-                  <div
-                    className="absolute pointer-events-none flex items-center justify-end pr-3"
-                    style={{ top: y - 5, left: 0, width: GUTTER_WIDTH, height: 10 }}
-                  >
-                    <span className="text-[10px] text-text-muted/70 font-medium tabular-nums select-none leading-none">
-                      {String(h).padStart(2, '0')}
-                    </span>
-                  </div>
-                  {hasSecondary && secondaryTimezone && (() => {
-                    const fromOffset = getTzOffsetMinutes(primaryTimezone)
-                    const toOffset = getTzOffsetMinutes(secondaryTimezone)
-                    const diff = toOffset - fromOffset
-                    const secondaryHour = Math.floor(((h * 60 + diff + 1440) % 1440) / 60)
-                    return (
-                      <div
-                        className="absolute pointer-events-none flex items-center justify-start pl-2"
-                        style={{ top: y - 5, left: GUTTER_WIDTH, width: SECONDARY_GUTTER, height: 10 }}
-                      >
-                        <span className="text-[9px] text-text-muted/40 font-medium tabular-nums select-none leading-none">
-                          {String(secondaryHour).padStart(2, '0')}
-                        </span>
-                      </div>
-                    )
-                  })()}
-                  {/* Hour tick */}
-                  <div
-                    className="absolute border-t border-border/30 pointer-events-none"
-                    style={{ top: y, right: 0, width: 8 }}
-                  />
-                  {/* Half-hour tick */}
-                  <div
-                    className="absolute border-t border-dashed border-border/15 pointer-events-none"
-                    style={{ top: y + HOUR_HEIGHT / 2, right: 0, width: 4 }}
-                  />
-                </div>
-              )
-            })}
-
-            {/* TZ label */}
-            <div className="absolute pointer-events-none flex items-center justify-end pr-3" style={{ top: -18, left: 0, width: GUTTER_WIDTH }}>
-              <span className="text-[9px] text-text-muted/50 font-medium select-none">{formatTzOffset(primaryTimezone)}</span>
-            </div>
-          </div>
-
-          {/* Blocks + tasks area */}
-          <div className="flex-1 relative mt-5" style={{ height: TOTAL_GRID_HEIGHT }}>
-            {/* Other blocks (context, non-interactive) */}
-            {otherBlocks.map((b) => {
-              const top = timeToY(b.startTime)
-              const height = ((b.endTime - b.startTime) / 60) * HOUR_HEIGHT
-              const color = BLOCK_COLORS[b.color] || BLOCK_COLORS.slate
-              return (
-                <div
-                  key={b.id}
-                  className="absolute left-0 right-3 rounded-md pointer-events-none"
-                  style={{
-                    top,
-                    height,
-                    backgroundColor: color + '10',
-                    borderLeft: `2px solid ${color}30`
-                  }}
-                >
-                  <span className="text-[9px] text-text-muted/40 px-2 pt-1 block truncate">
-                    {b.title}
-                  </span>
-                </div>
-              )
-            })}
-
-            {/* Flow block start marker — draggable line */}
-            {flowBlock && (() => {
-              const top = timeToY(flowBlock.startTime)
-              return (
-                <div
-                  className="absolute left-0 right-3 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none z-10"
-                  style={{ top: top - 10, height: 20 }}
-                  onMouseDown={handleBlockDragStart}
-                >
-                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: blockColor }} />
-                  <span className="text-[10px] font-medium truncate" style={{ color: blockColor }}>{flowBlock.title}</span>
-                  <span className="text-[10px] text-text-muted/50 tabular-nums shrink-0">
-                    {formatTime(flowBlock.startTime)}–{formatTime(flowBlock.endTime)}
-                  </span>
-                  <div className="flex-1 border-t border-dashed" style={{ borderColor: blockColor + '40' }} />
-                </div>
-              )
-            })()}
-
-            {/* Tasks — positioned at block start, stacked by estimate height */}
-            {flowBlock && (
-              <div
-                className="absolute left-0 right-3 flex flex-col gap-0.5"
-                style={{ top: timeToY(flowBlock.startTime) + 12 }}
-              >
-                {indexedQueue.map((item) => renderTaskItem(item))}
-              </div>
-            )}
-          </div>
+          })}
         </div>
       </div>
     </div>

@@ -45,7 +45,7 @@ interface FlowState {
   taskAccumulatedSeconds: number
   lastCascadedMinutes: number
 
-  activate: (date: string, blockId: string) => void
+  activate: (date: string, blockId?: string) => void
   start: () => void
   stop: () => void
   deactivate: () => void
@@ -59,27 +59,28 @@ interface FlowState {
   getSecondsRemaining: () => number
 }
 
-function buildQueue(date: string, blockId: string): FlowQueueItem[] {
+function buildQueue(date: string): FlowQueueItem[] {
   const taskStore = useTaskStore.getState()
   const blocks = useTimeBlockStore.getState().blocks[date] || []
-  const block = blocks.find((b) => b.id === blockId)
-  if (!block) return []
-
-  const blockKey = `${date}__block__${block.id}`
-  const tasks = taskStore.tasks[blockKey] || []
+  const sorted = [...blocks].sort((a, b) => a.startTime - b.startTime)
   const queue: FlowQueueItem[] = []
 
-  for (const task of tasks) {
-    if (task.completed) continue
-    const estimate = getEffectiveEstimate(task)
-    queue.push({
-      taskId: task.id,
-      blockKey,
-      blockId: block.id,
-      estimatedMinutes: estimate ?? null,
-      timeSpentSeconds: 0,
-      status: 'pending'
-    })
+  for (const block of sorted) {
+    const blockKey = `${date}__block__${block.id}`
+    const tasks = taskStore.tasks[blockKey] || []
+
+    for (const task of tasks) {
+      if (task.completed) continue
+      const estimate = getEffectiveEstimate(task)
+      queue.push({
+        taskId: task.id,
+        blockKey,
+        blockId: block.id,
+        estimatedMinutes: estimate ?? null,
+        timeSpentSeconds: 0,
+        status: 'pending'
+      })
+    }
   }
 
   return queue
@@ -116,27 +117,24 @@ const IDLE_STATE = {
 export const useFlowStore = create<FlowState>()((set, get) => ({
   ...IDLE_STATE,
 
-  // Prepare flow: build queue, show summary (don't start timer yet)
-  activate: (date, blockId) => {
+  // Prepare flow: build queue from all blocks of the day, show summary
+  activate: (date, _blockId) => {
     const pomodoroStore = usePomodoroStore.getState()
     if (pomodoroStore.status !== 'idle') {
       pomodoroStore.stop()
     }
 
     const blocks = useTimeBlockStore.getState().blocks[date] || []
-    const block = blocks.find((b) => b.id === blockId)
-    if (!block) return
+    const snapshot = blocks.map((b) => ({ id: b.id, startTime: b.startTime, endTime: b.endTime }))
 
-    const snapshot = [{ id: block.id, startTime: block.startTime, endTime: block.endTime }]
-
-    const queue = buildQueue(date, blockId)
+    const queue = buildQueue(date)
     if (queue.length === 0) return
 
     set({
       isActive: true,
       started: false,
       date,
-      blockId,
+      blockId: null,
       queue,
       currentIndex: -1,
       originalBlocks: snapshot,

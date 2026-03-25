@@ -462,6 +462,14 @@ export async function initSync(): Promise<void> {
 
 export async function loadDayFromICloud(date: string): Promise<void> {
   if (!icloudAvailable) return
+  // Flush any pending debounced write so we don't overwrite recent local changes
+  // with stale disk data
+  const pending = debounceTimers.get(date)
+  if (pending) {
+    clearTimeout(pending)
+    debounceTimers.delete(date)
+    writeDayToICloud(date)
+  }
   const data = await window.bloc?.icloud.readDay(date)
   if (data) {
     applyExternalChange(data)

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Zap } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Play } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -9,7 +9,7 @@ import { useTaskStore } from '../stores/taskStore'
 import DeferBlockModal from '../components/DeferBlockModal'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import TimelineGrid from '../components/TimelineGrid'
-import DistractionItem from '../components/DistractionItem'
+import DistractionSidebar from '../components/DistractionSidebar'
 import DayView from './DayView'
 import DailyStandupModal from '../components/DailyStandupModal'
 import FlowTimer from '../components/FlowTimer'
@@ -134,96 +134,101 @@ function DetailBlockHeader({
 }
 
 function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
-  const [sidebarWidth, setSidebarWidth] = useState(192)
-  const isDragging = useRef(false)
-  const distractionRef = useRef<HTMLInputElement>(null)
-  const [distractionText, setDistractionText] = useState('')
+  const flowStarted = useFlowStore((s) => s.started)
+  const startFlow = useFlowStore((s) => s.start)
+  const deactivate = useFlowStore((s) => s.deactivate)
 
-  const distractions = useTaskStore((s) => s.distractions[date] ?? EMPTY_DISTRACTIONS)
-  const addDistraction = useTaskStore((s) => s.addDistraction)
-  const pendingDistractions = distractions.filter((d) => d.status === 'pending')
+  const FLOW_DIVIDER_KEY = 'bloc-flow-divider-pct'
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [leftPct, setFlowLeftPct] = useState(() => {
+    const stored = localStorage.getItem(FLOW_DIVIDER_KEY)
+    return stored ? Number(stored) : 75
+  })
+  const [isDragging, setIsDragging] = useState(false)
 
-  const handleAddDistraction = useCallback(() => {
-    const trimmed = distractionText.trim()
-    if (!trimmed) return
-    addDistraction(date, trimmed)
-    setDistractionText('')
-  }, [distractionText, date, addDistraction])
-
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleDividerDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    isDragging.current = true
-    const startX = e.clientX
-    const startWidth = sidebarWidth
+    setIsDragging(true)
+  }, [])
 
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!isDragging.current) return
-      const delta = startX - ev.clientX
-      setSidebarWidth(Math.max(120, Math.min(400, startWidth + delta)))
+  useEffect(() => {
+    if (!isDragging) return
+    function onMouseMove(e: MouseEvent) {
+      if (!containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      let pct = (x / rect.width) * 100
+      pct = Math.max(30, Math.min(85, pct))
+      setFlowLeftPct(pct)
     }
-    const onMouseUp = () => {
-      isDragging.current = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
+    function onMouseUp() {
+      setIsDragging(false)
+      localStorage.setItem(FLOW_DIVIDER_KEY, String(leftPct))
     }
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [sidebarWidth])
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [isDragging, leftPct])
 
   return (
-    <div className="h-full flex bg-bg-primary">
+    <div ref={containerRef} className="h-full flex bg-bg-primary" style={{ cursor: isDragging ? 'col-resize' : undefined }}>
       {/* Left: titlebar + timer + queue */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div style={{ width: `${leftPct}%` }} className="flex flex-col overflow-hidden">
         <div className={`titlebar-drag shrink-0 ${isNarrow ? 'px-3 pt-[38px]' : 'pl-5 pr-5 pt-[50px]'} pb-2`}>
           <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <FlowTimer />
           </div>
+        </div>
+        <div className={`shrink-0 ${isNarrow ? 'px-3' : 'pl-5 pr-5'} pt-1 pb-2 flex items-center justify-between`}>
+          <h2 className="text-sm text-text-secondary font-medium">
+            {format(parseISO(date), isNarrow ? 'EEE, d MMM' : "EEEE, d 'de' MMMM yyyy", { locale: pt }).replace(/^./, (c) => c.toUpperCase())}
+          </h2>
+          {!flowStarted && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={deactivate}
+                className="text-xs text-text-muted hover:text-text-secondary transition-colors"
+              >
+                Voltar
+              </button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={startFlow}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-violet-500 text-white text-xs font-medium hover:bg-violet-600 transition-colors"
+              >
+                <Play size={12} />
+                Go with the flow
+              </motion.button>
+            </div>
+          )}
         </div>
         <div className="flex-1 overflow-hidden">
           <FlowQueueView date={date} />
         </div>
       </div>
 
-      {/* Resize handle */}
+      {/* Divider */}
       <div
-        className="shrink-0 w-1 cursor-col-resize hover:bg-violet-500/20 active:bg-violet-500/30 transition-colors"
-        onMouseDown={handleMouseDown}
-      />
+        onMouseDown={handleDividerDown}
+        className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center"
+      >
+        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
+        {isDragging && (
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
+        )}
+        <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
+      </div>
 
       {/* Right: Distractions sidebar — full height */}
-      <div className="shrink-0 flex flex-col border-l border-border/30" style={{ width: sidebarWidth }}>
-        <div className={`titlebar-drag shrink-0 ${isNarrow ? 'px-3 pt-[38px]' : 'px-3 pt-[50px]'} pb-2`}>
-          <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
-            Distrações
-          </span>
-        </div>
-
-        {/* Distraction list */}
-        <div className="flex-1 overflow-y-auto px-3 pb-2">
-          {pendingDistractions.length === 0 && (
-            <p className="text-[11px] text-text-muted/50 py-2">Nenhuma ainda</p>
-          )}
-          {pendingDistractions.map((d) => (
-            <div key={d.id} className="py-1">
-              <span className="text-[11px] text-text-muted leading-tight">{d.text}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Distraction input */}
-        <div className="shrink-0 px-3 pb-3 pt-2">
-          <div className="flex items-center gap-1.5">
-            <Zap size={10} className="shrink-0 text-distraction" />
-            <input
-              ref={distractionRef}
-              type="text"
-              value={distractionText}
-              onChange={(e) => setDistractionText(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddDistraction() }}
-              placeholder="Anotar..."
-              className="flex-1 text-[11px] bg-bg-secondary/60 border border-border/40 rounded-md px-2 py-1 text-text-primary placeholder:text-text-muted outline-none focus:border-distraction/50 transition-colors"
-              spellCheck={false}
-            />
+      <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel">
+        <div className="h-full flex flex-col">
+          <div className="shrink-0 h-[50px]" />
+          <div className="flex-1 min-h-0">
+            <DistractionSidebar date={date} showHeader keyboardShortcut />
           </div>
         </div>
       </div>
@@ -273,14 +278,12 @@ export default function TimelineView() {
   // Flow (Go With The Flow) state
   const flowIsActive = useFlowStore((s) => s.isActive)
   const flowActivate = useFlowStore((s) => s.activate)
-  const showFlowButton = !flowIsActive && !!activeBlockId
+  const dayBlocks = useTimeBlockStore((s) => s.blocks[date ?? ''] ?? [])
+  const showFlowButton = !flowIsActive && dayBlocks.length > 0
 
-  // Distractions
+  // Distractions (count for tab badges)
   const allDistractions = useTaskStore((s) => s.distractions)
-  const addDistraction = useTaskStore((s) => s.addDistraction)
-  const convertToTask = useTaskStore((s) => s.convertToTask)
   const distractions = (allDistractions[date!] || []).filter((d) => d.status === 'pending')
-  const [distractionInput, setDistractionInput] = useState('')
 
   // Pending tasks count for badges
   const allStoreTasks = useTaskStore((s) => s.tasks)
@@ -518,7 +521,7 @@ export default function TimelineView() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => flowActivate(date, activeBlockId!)}
+                onClick={() => flowActivate(date)}
                 aria-label="Fluir"
                 title="Go With The Flow"
                 className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
@@ -573,24 +576,7 @@ export default function TimelineView() {
             ) : activeTab === 'pending' ? (
               <PendingTasksPanel currentDate={date!} />
             ) : (
-              <div className="flex flex-col h-full overflow-hidden">
-                <div className="shrink-0 px-3 pt-2 pb-3">
-                  <input type="text" value={distractionInput} onChange={(e) => setDistractionInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && distractionInput.trim()) { addDistraction(date!, distractionInput.trim()); setDistractionInput('') } }} placeholder="Anotar distração..." className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors" />
-                </div>
-                <div className="flex-1 overflow-y-auto px-3 pb-6">
-                  {distractions.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-text-muted/50 text-xs text-center leading-relaxed">Capture pensamentos aqui...<br /><span className="text-xs">⌘⇧D para captura rápida</span></p>
-                    </div>
-                  ) : (
-                    <AnimatePresence>
-                      {distractions.map((d) => (
-                        <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
-                      ))}
-                    </AnimatePresence>
-                  )}
-                </div>
-              </div>
+              <DistractionSidebar date={date!} showHeader={false} />
             )}
           </div>
         </div>
@@ -617,7 +603,7 @@ export default function TimelineView() {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => flowActivate(date, activeBlockId!)}
+                onClick={() => flowActivate(date)}
                 aria-label="Fluir"
                 title="Go With The Flow"
                 className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
@@ -678,39 +664,7 @@ export default function TimelineView() {
             {detailRightTab === 'pending' ? (
               <PendingTasksPanel currentDate={date!} />
             ) : (
-              <>
-                <div className="shrink-0 px-5 pt-2 pb-4">
-                  <input
-                    type="text"
-                    value={distractionInput}
-                    onChange={(e) => setDistractionInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && distractionInput.trim()) {
-                        addDistraction(date!, distractionInput.trim())
-                        setDistractionInput('')
-                      }
-                    }}
-                    placeholder="Anotar distração..."
-                    className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
-                  />
-                </div>
-                <div className="flex-1 overflow-y-auto px-3 pb-6">
-                  {distractions.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-text-muted/50 text-xs text-center leading-relaxed">
-                        Capture pensamentos aqui...<br />
-                        <span className="text-xs">⌘⇧D para captura rápida</span>
-                      </p>
-                    </div>
-                  ) : (
-                    <AnimatePresence>
-                      {distractions.map((d) => (
-                        <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
-                      ))}
-                    </AnimatePresence>
-                  )}
-                </div>
-              </>
+              <DistractionSidebar date={date!} showHeader={false} />
             )}
           </div>
         </div>
@@ -736,6 +690,18 @@ export default function TimelineView() {
             </motion.button>
           </div>
           <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {showFlowButton && date ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => flowActivate(date)}
+                aria-label="Fluir"
+                title="Go With The Flow"
+                className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+              >
+                <Waves size={16} />
+              </motion.button>
+            ) : null}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -798,24 +764,7 @@ export default function TimelineView() {
           {activeTab === 'timeline' ? (
             <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
           ) : (
-            <div className="flex flex-col h-full overflow-hidden">
-              <div className="shrink-0 px-3 pt-2 pb-3">
-                <input type="text" value={distractionInput} onChange={(e) => setDistractionInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && distractionInput.trim()) { addDistraction(date!, distractionInput.trim()); setDistractionInput('') } }} placeholder="Anotar distração..." className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors" />
-              </div>
-              <div className="flex-1 overflow-y-auto px-3 pb-6">
-                {distractions.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-text-muted/50 text-xs text-center leading-relaxed">Capture pensamentos aqui...<br /><span className="text-xs">⌘⇧D para captura rápida</span></p>
-                  </div>
-                ) : (
-                  <AnimatePresence>
-                    {distractions.map((d) => (
-                      <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
-                    ))}
-                  </AnimatePresence>
-                )}
-              </div>
-            </div>
+            <DistractionSidebar date={date!} showHeader={false} />
           )}
         </div>
         <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
@@ -837,116 +786,98 @@ export default function TimelineView() {
 
   // ─── Timeline mode: wide (≥ 640px) — split panel ──────────
   return (
-    <div ref={containerRef} className="h-full flex flex-col bg-bg-primary" style={{ cursor: isDividerDragging ? 'col-resize' : undefined }}>
-      {/* Titlebar */}
-      <div className="titlebar-drag shrink-0 flex items-end justify-between pl-5 pr-6 pt-[50px] pb-2">
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleBack}
-            aria-label="Voltar"
-            className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <ArrowLeft size={18} />
-          </motion.button>
+    <div ref={containerRef} className="h-full flex bg-bg-primary" style={{ cursor: isDividerDragging ? 'col-resize' : undefined }}>
+      {/* Left: header + timeline grid */}
+      <div style={{ width: `${leftPct}%` }} className="flex flex-col overflow-hidden">
+        {/* Titlebar */}
+        <div className="titlebar-drag shrink-0 flex items-end justify-between pl-5 pr-6 pt-[50px] pb-2">
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleBack}
+              aria-label="Voltar"
+              className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
+            >
+              <ArrowLeft size={18} />
+            </motion.button>
+          </div>
+          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            {showFlowButton && date ? (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => flowActivate(date)}
+                aria-label="Fluir"
+                title="Go With The Flow"
+                className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+              >
+                <Waves size={16} />
+              </motion.button>
+            ) : null}
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowStandup(true)}
+              aria-label="Daily Standup"
+              className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
+            >
+              <ClipboardList size={18} />
+            </motion.button>
+          </div>
         </div>
-        <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowStandup(true)}
-            aria-label="Daily Standup"
-            className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <ClipboardList size={18} />
-          </motion.button>
+
+        {/* Date header */}
+        <div className="shrink-0 pl-5 pr-5 pt-1 pb-2 flex items-center gap-1">
+          <button onClick={goToPrevDay} aria-label="Dia anterior" title="Alt+←" className="p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-secondary">
+            <ChevronLeft size={14} />
+          </button>
+          <h2 className="text-sm text-text-secondary font-medium">{formattedDate}</h2>
+          <button onClick={goToNextDay} aria-label="Dia seguinte" title="Alt+→" className="p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-secondary">
+            <ChevronRight size={14} />
+          </button>
         </div>
-      </div>
 
-      {/* Date header */}
-      <div className="shrink-0 pl-5 pr-5 pt-1 pb-2 flex items-center gap-1">
-        <button onClick={goToPrevDay} aria-label="Dia anterior" title="Alt+←" className="p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-secondary">
-          <ChevronLeft size={14} />
-        </button>
-        <h2 className="text-sm text-text-secondary font-medium">{formattedDate}</h2>
-        <button onClick={goToNextDay} aria-label="Dia seguinte" title="Alt+→" className="p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-secondary">
-          <ChevronRight size={14} />
-        </button>
-      </div>
+        {/* Inline title editor */}
+        <AnimatePresence>
+          {editingBlockId && (
+            <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="shrink-0 pl-5 pr-5 pb-2">
+              <div className="flex items-center gap-2 rounded-lg bg-bg-secondary border border-accent/30 px-3 py-2">
+                <input ref={titleInputRef} type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') commitTitle() }} onBlur={commitTitle} placeholder="Nome do bloco..." className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50" />
+                <span className="text-[10px] text-text-muted">Enter para confirmar</span>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {/* Inline title editor */}
-      <AnimatePresence>
-        {editingBlockId && (
-          <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="shrink-0 pl-5 pr-5 pb-2">
-            <div className="flex items-center gap-2 rounded-lg bg-bg-secondary border border-accent/30 px-3 py-2">
-              <input ref={titleInputRef} type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') commitTitle() }} onBlur={commitTitle} placeholder="Nome do bloco..." className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50" />
-              <span className="text-[10px] text-text-muted">Enter para confirmar</span>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Split: timeline + distractions */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Left: timeline grid */}
-        <div style={{ width: `${leftPct}%` }} className="overflow-hidden">
+        {/* Timeline grid */}
+        <div className="flex-1 overflow-hidden">
           <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
         </div>
+      </div>
 
-        {/* Divider */}
-        <div
-          onMouseDown={handleDividerDown}
-          className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center"
-        >
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
-          {isDividerDragging && (
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
-          )}
-          <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
-        </div>
+      {/* Divider */}
+      <div
+        onMouseDown={handleDividerDown}
+        className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center"
+      >
+        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
+        {isDividerDragging && (
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
+        )}
+        <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
+      </div>
 
-        {/* Right: distractions */}
-        <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel flex flex-col">
-          <div className="shrink-0 px-5 pt-4 pb-4">
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="text-xs font-medium text-text-muted/70 uppercase tracking-wider">Distrações</h2>
-              {distractions.length > 0 && (
-                <span className="text-xs font-medium text-distraction bg-distraction/15 rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1.5">{distractions.length}</span>
-              )}
-            </div>
-            <input
-              type="text"
-              value={distractionInput}
-              onChange={(e) => setDistractionInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && distractionInput.trim()) {
-                  addDistraction(date!, distractionInput.trim())
-                  setDistractionInput('')
-                }
-              }}
-              placeholder="Anotar distração..."
-              className="w-full rounded-lg bg-transparent px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:bg-bg-secondary/60 transition-colors"
-            />
-          </div>
-          <div className="flex-1 overflow-y-auto px-3 pb-6">
-            {distractions.length === 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <p className="text-text-muted/50 text-xs text-center leading-relaxed">
-                  Capture pensamentos aqui...<br />
-                  <span className="text-xs">⌘⇧D para captura rápida</span>
-                </p>
-              </div>
-            ) : (
-              <AnimatePresence>
-                {distractions.map((d) => (
-                  <DistractionItem key={d.id} distraction={d} date={date!} onConvert={(id) => convertToTask(date!, id, date!)} />
-                ))}
-              </AnimatePresence>
-            )}
+      {/* Right: distractions — full height */}
+      <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel">
+        <div className="h-full flex flex-col">
+          <div className="shrink-0 h-[50px]" />
+          <div className="flex-1 min-h-0">
+            <DistractionSidebar date={date!} showHeader />
           </div>
         </div>
       </div>
+
       <DailyStandupModal visible={showStandup} onClose={() => setShowStandup(false)} />
       <DeferBlockModal
         isOpen={!!deferringBlock}

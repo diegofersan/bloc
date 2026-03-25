@@ -322,9 +322,11 @@ export const useTaskStore = create<TaskState>()(
           if (clipboard.taskId === taskId) {
             clipboard.clearClipboard()
           }
+          // Only store lastDeleted for non-empty tasks (no undo toast for blank tasks)
+          const isNonEmpty = task && task.text.trim() !== ''
           return {
             tasks: newTasks,
-            lastDeleted: task ? { task, date, index: Math.max(0, index) } : state.lastDeleted
+            lastDeleted: isNonEmpty ? { task, date, index: Math.max(0, index) } : state.lastDeleted
           }
         })
       },
@@ -950,40 +952,3 @@ export const useTaskStore = create<TaskState>()(
   )
 )
 
-// Auto-resize blocks based on sum of task estimates
-import { useTimeBlockStore } from './timeBlockStore'
-
-const MIN_BLOCK_DURATION = 15 // minimum block size in minutes
-
-useTaskStore.subscribe((state, prevState) => {
-  const blockStore = useTimeBlockStore.getState()
-  const allBlocks = blockStore.blocks
-
-  for (const [key, tasks] of Object.entries(state.tasks)) {
-    // Only process block keys (date__block__id)
-    if (!key.includes('__block__')) continue
-
-    const prevTasks = prevState.tasks[key]
-    if (tasks === prevTasks) continue // no change in this block's tasks
-
-    const parts = key.split('__block__')
-    const date = parts[0]
-    const blockId = parts[1]
-    if (!date || !blockId) continue
-
-    const blocks = allBlocks[date] || []
-    const block = blocks.find((b) => b.id === blockId)
-    if (!block || block.isGoogleReadOnly) continue
-
-    // Sum estimates of non-completed tasks
-    const totalMinutes = tasks.reduce((sum, t) => {
-      if (t.completed) return sum
-      return sum + (t.estimatedMinutes ?? 0)
-    }, 0)
-
-    const newEndTime = block.startTime + Math.max(totalMinutes, MIN_BLOCK_DURATION)
-    if (newEndTime !== block.endTime) {
-      useTimeBlockStore.getState().updateBlock(date, blockId, { endTime: newEndTime })
-    }
-  }
-})
