@@ -522,7 +522,11 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                               item.estimatedMinutes ? 'text-[10px] text-text-secondary' : 'text-[10px] text-text-muted/30 hover:text-text-muted/60'
                             }`}
                           >
-                            {item.estimatedMinutes ? formatEstimate(item.estimatedMinutes) : '+ tempo'}
+                            {item.estimatedMinutes
+                              ? item.timeSpentSeconds > 0
+                                ? formatEstimate(Math.max(1, Math.ceil(item.estimatedMinutes - item.timeSpentSeconds / 60)))
+                                : formatEstimate(item.estimatedMinutes)
+                              : '+ tempo'}
                           </button>
                         ) : isCompleted && item.timeSpentSeconds > 0 ? (
                           <span className="shrink-0 text-[10px] text-text-muted tabular-nums">

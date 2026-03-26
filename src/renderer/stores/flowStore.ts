@@ -34,6 +34,9 @@ interface FlowState {
   isPaused: boolean
   autoPaused: boolean
 
+  // Persisted: completed items per date (survives deactivate)
+  completedByDate: Record<string, FlowQueueItem[]>
+
   // Pomodoro-style timer
   phase: FlowPhase
   secondsRemaining: number
@@ -75,7 +78,6 @@ function buildQueue(date: string): FlowQueueItem[] {
     const tasks = taskStore.tasks[blockKey] || []
 
     for (const task of tasks) {
-      if (task.completed) continue
       const estimate = getEffectiveEstimate(task)
       queue.push({
         taskId: task.id,
@@ -83,7 +85,7 @@ function buildQueue(date: string): FlowQueueItem[] {
         blockId: block.id,
         estimatedMinutes: estimate ?? null,
         timeSpentSeconds: 0,
-        status: 'pending'
+        status: task.completed ? 'completed' : 'pending'
       })
     }
   }
@@ -122,6 +124,7 @@ const IDLE_STATE = {
 
 export const useFlowStore = create<FlowState>()(persist((set, get) => ({
   ...IDLE_STATE,
+  completedByDate: {},
 
   // Prepare flow: build queue from all blocks of the day, show summary
   activate: (date, _blockId) => {
@@ -133,18 +136,28 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
     const blocks = useTimeBlockStore.getState().blocks[date] || []
     const snapshot = blocks.map((b) => ({ id: b.id, startTime: b.startTime, endTime: b.endTime }))
 
-    const pendingQueue = buildQueue(date)
+    const freshQueue = buildQueue(date)
 
-    // Preserve completed items from previous session on the same date
-    const prev = get()
-    const completedItems = prev.date === date
-      ? prev.queue.filter((q) => q.status === 'completed')
-      : []
+    // Restore flow-tracked completed items (with timeSpentSeconds) from previous session
+    const flowCompleted = get().completedByDate[date] || []
+    const flowCompletedIds = new Set(flowCompleted.map((q) => `${q.blockKey}::${q.taskId}`))
 
-    // Merge: completed first (in original order), then pending (excluding already completed tasks)
-    const completedTaskIds = new Set(completedItems.map((q) => `${q.blockKey}::${q.taskId}`))
-    const newPending = pendingQueue.filter((q) => !completedTaskIds.has(`${q.blockKey}::${q.taskId}`))
-    const queue = [...completedItems, ...newPending]
+    // Merge: flow-tracked items override buildQueue items, completed go to end of block
+    const merged = freshQueue.map((item) => {
+      const key = `${item.blockKey}::${item.taskId}`
+      if (flowCompletedIds.has(key)) {
+        return flowCompleted.find((q) => `${q.blockKey}::${q.taskId}` === key)!
+      }
+      return item
+    })
+
+    // Reorder: pending first, completed last within each block
+    const queue = merged.sort((a, b) => {
+      if (a.blockId !== b.blockId) return 0
+      const aCompleted = a.status === 'completed' ? 1 : 0
+      const bCompleted = b.status === 'completed' ? 1 : 0
+      return aCompleted - bCompleted
+    })
 
     if (queue.length === 0) return
 
@@ -231,7 +244,16 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
   },
 
   deactivate: () => {
-    set(IDLE_STATE)
+    // Save completed items before clearing
+    const { date, queue, completedByDate } = get()
+    const completed = queue.filter((q) => q.status === 'completed')
+    const updatedHistory = { ...completedByDate }
+    if (date && completed.length > 0) {
+      updatedHistory[date] = completed
+    } else if (date) {
+      delete updatedHistory[date]
+    }
+    set({ ...IDLE_STATE, completedByDate: updatedHistory })
   },
 
   tick: () => {
@@ -303,25 +325,40 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
 
     const taskElapsed = get().getTaskElapsedSeconds()
     const newQueue = [...queue]
-    newQueue[currentIndex] = {
+    const completedItem = {
       ...newQueue[currentIndex],
-      status: 'completed',
+      status: 'completed' as const,
       timeSpentSeconds: taskElapsed
     }
+    const currentBlockId = completedItem.blockId
 
-    const currentBlockId = newQueue[currentIndex].blockId
+    // Move completed item to end of its block
+    newQueue.splice(currentIndex, 1)
+    let insertAt = newQueue.length
+    for (let i = currentIndex; i < newQueue.length; i++) {
+      if (newQueue[i].blockId !== currentBlockId) {
+        insertAt = i
+        break
+      }
+    }
+    newQueue.splice(insertAt, 0, completedItem)
+
     const blockTasksRemaining = newQueue.filter(
-      (q, i) => i > currentIndex && q.blockId === currentBlockId && q.status === 'pending'
+      (q) => q.blockId === currentBlockId && q.status === 'pending'
     )
 
     if (blockTasksRemaining.length === 0) {
       shrinkBlockIfEarly(date, currentBlockId, newQueue)
     }
 
-    const nextIndex = newQueue.findIndex((q, i) => i > currentIndex && q.status === 'pending')
+    const nextIndex = newQueue.findIndex((q, i) => i >= currentIndex && q.status === 'pending')
 
     if (nextIndex === -1) {
-      set({ ...IDLE_STATE, queue: newQueue })
+      // All done — save completed items and deactivate
+      const completed = newQueue.filter((q) => q.status === 'completed')
+      const updatedHistory = { ...get().completedByDate }
+      if (completed.length > 0) updatedHistory[date] = completed
+      set({ ...IDLE_STATE, completedByDate: updatedHistory, queue: newQueue })
       return
     }
 
@@ -374,7 +411,10 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
     }
 
     if (nextIndex === -1) {
-      set({ ...IDLE_STATE, queue: newQueue })
+      const completed = newQueue.filter((q) => q.status === 'completed')
+      const updatedHistory = { ...get().completedByDate }
+      if (completed.length > 0) updatedHistory[date] = completed
+      set({ ...IDLE_STATE, completedByDate: updatedHistory, queue: newQueue })
       return
     }
 
@@ -508,10 +548,7 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
 }), {
   name: 'bloc-flow',
   partialize: (state) => ({
-    date: state.date,
-    queue: state.queue,
-    originalBlocks: state.originalBlocks,
-    completedPomodoros: state.completedPomodoros
+    completedByDate: state.completedByDate
   })
 }))
 
@@ -580,23 +617,50 @@ function shrinkBlockIfEarly(date: string, blockId: string, queue: FlowQueueItem[
   }
 }
 
-// Subscribe to task completions to auto-advance flow
+// Subscribe to task completions/uncommletions to sync flow queue
 useTaskStore.subscribe((state, prevState) => {
   const flowState = useFlowStore.getState()
-  if (!flowState.isActive || !flowState.started || flowState.currentIndex < 0) return
+  if (!flowState.isActive) return
 
-  const currentItem = flowState.queue[flowState.currentIndex]
-  if (!currentItem || currentItem.status !== 'active') return
+  const { queue } = flowState
 
-  const blockKey = currentItem.blockKey
-  const currentTasks = state.tasks[blockKey] || []
-  const prevTasks = prevState.tasks[blockKey] || []
+  // Check all queue items for completion changes
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i]
+    const currentTasks = state.tasks[item.blockKey] || []
+    const prevTasks = prevState.tasks[item.blockKey] || []
+    const task = currentTasks.find((t) => t.id === item.taskId)
+    const prevTask = prevTasks.find((t) => t.id === item.taskId)
 
-  const task = currentTasks.find((t) => t.id === currentItem.taskId)
-  const prevTask = prevTasks.find((t) => t.id === currentItem.taskId)
+    // Task was completed externally (checkbox)
+    if (task?.completed && !prevTask?.completed) {
+      if (flowState.started && item.status === 'active' && i === flowState.currentIndex) {
+        // Active task → use completeCurrentTask (handles timer, next task, etc.)
+        flowState.completeCurrentTask()
+        return
+      }
+      if (item.status === 'pending') {
+        // Non-active task → mark completed and move to end of block
+        const newQueue = [...queue]
+        const completedItem = { ...newQueue[i], status: 'completed' as const }
+        newQueue.splice(i, 1)
+        let insertAt = newQueue.length
+        for (let j = i; j < newQueue.length; j++) {
+          if (newQueue[j].blockId !== completedItem.blockId) { insertAt = j; break }
+        }
+        newQueue.splice(insertAt, 0, completedItem)
+        useFlowStore.setState({ queue: newQueue })
+        return
+      }
+    }
 
-  if (task?.completed && !prevTask?.completed) {
-    flowState.completeCurrentTask()
+    // Task was uncompleted → revert queue item to pending
+    if (!task?.completed && prevTask?.completed && item.status === 'completed') {
+      const newQueue = [...queue]
+      newQueue[i] = { ...newQueue[i], status: 'pending' }
+      useFlowStore.setState({ queue: newQueue })
+      return
+    }
   }
 })
 
