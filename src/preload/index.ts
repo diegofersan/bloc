@@ -64,21 +64,6 @@ if (process.contextIsolated) {
         isActive: () => ipcRenderer.invoke('site-blocker:is-active'),
         cleanup: () => ipcRenderer.invoke('site-blocker:cleanup')
       },
-      stealthy: {
-        enter: (opts: { width: number; height: number }) => ipcRenderer.invoke('stealthy:enter', opts),
-        exit: () => ipcRenderer.invoke('stealthy:exit'),
-        resize: (opts: { width: number; height: number; resizable?: boolean }) => ipcRenderer.invoke('stealthy:resize', opts),
-        onToggle: (callback: () => void) => {
-          const handler = () => callback()
-          ipcRenderer.on('stealthy:toggle', handler)
-          return () => ipcRenderer.removeListener('stealthy:toggle', handler)
-        },
-        onChange: (callback: (active: boolean) => void) => {
-          const handler = (_event: Electron.IpcRendererEvent, active: boolean) => callback(active)
-          ipcRenderer.on('stealthy:changed', handler)
-          return () => ipcRenderer.removeListener('stealthy:changed', handler)
-        }
-      },
       idle: {
         onWarning: (callback: (idleSeconds: number) => void) => {
           const handler = (_event: Electron.IpcRendererEvent, idleSeconds: number) => callback(idleSeconds)

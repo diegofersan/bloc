@@ -252,16 +252,6 @@ export default function TimelineView() {
       setSearchParams({}, { replace: true })
     }
   }, [])
-  // Sync active block to store so StealthyView can use it
-  const setStealthyBlockId = usePomodoroStore((s) => s.setStealthyBlockId)
-  useEffect(() => {
-    if (viewMode === 'detail' && activeBlockId) {
-      setStealthyBlockId(activeBlockId)
-    } else {
-      setStealthyBlockId(null)
-    }
-  }, [viewMode, activeBlockId, setStealthyBlockId])
-
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -288,22 +278,35 @@ export default function TimelineView() {
   // Pending tasks count for badges
   const allStoreTasks = useTaskStore((s) => s.tasks)
   const allTaskRefs = useTaskStore((s) => s.taskRefs)
+  const activeBlockForCount = viewMode === 'detail' && activeBlockId
+    ? blocks.find((b) => b.id === activeBlockId)
+    : null
+  const projectTitleNorm = activeBlockForCount?.title?.trim().toLowerCase() || null
+
   const pendingCount = useMemo(() => {
     if (!date) return 0
     let count = 0
     const linkedIds = new Set((allTaskRefs[date] || []).map((r) => r.originTaskId))
     for (const [d, taskList] of Object.entries(allStoreTasks)) {
-      // Extract base date from composite keys (e.g. "2026-03-10__block__uuid")
       const blockMatch = d.match(/^(.+)__block__(.+)$/)
       const baseDate = blockMatch ? blockMatch[1] : d
-      // Skip tasks from the current day
       if (baseDate === date) continue
+
+      // When in block detail, only count tasks from blocks with the same title
+      if (projectTitleNorm) {
+        if (!blockMatch) continue
+        const blockId = blockMatch[2]
+        const dateBlocks = allBlocks[baseDate] || []
+        const block = dateBlocks.find((b) => b.id === blockId)
+        if (!block || block.title.trim().toLowerCase() !== projectTitleNorm) continue
+      }
+
       for (const task of taskList) {
         if (!task.completed && !linkedIds.has(task.id)) count++
       }
     }
     return count
-  }, [allStoreTasks, allTaskRefs, date])
+  }, [allStoreTasks, allTaskRefs, allBlocks, date, projectTitleNorm])
 
   // Split panel divider
   const containerRef = useRef<HTMLDivElement>(null)
@@ -574,7 +577,7 @@ export default function TimelineView() {
             {activeTab === 'timeline' ? (
               <DayView date={`${date!}__block__${activeBlockId}`} embedded />
             ) : activeTab === 'pending' ? (
-              <PendingTasksPanel currentDate={date!} />
+              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} />
             ) : (
               <DistractionSidebar date={date!} showHeader={false} />
             )}
@@ -585,84 +588,87 @@ export default function TimelineView() {
 
     // Wide: split panel (tasks left + distractions right)
     return (
-      <div ref={containerRef} className="h-full flex flex-col bg-bg-primary" style={{ cursor: isDividerDragging ? 'col-resize' : undefined }}>
-        <div className="titlebar-drag shrink-0 flex items-end justify-between pl-5 pr-6 pt-[50px] pb-2">
-          <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleBack}
-              aria-label="Voltar à timeline"
-              className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
-            >
-              <ArrowLeft size={18} />
-            </motion.button>
-          </div>
-          <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            {showFlowButton && date ? (
+      <div ref={containerRef} className="h-full flex bg-bg-primary" style={{ cursor: isDividerDragging ? 'col-resize' : undefined }}>
+        {/* Left: titlebar + block header + tasks */}
+        <div style={{ width: `${leftPct}%` }} className="flex flex-col overflow-hidden">
+          <div className="titlebar-drag shrink-0 flex items-end justify-between pl-5 pr-6 pt-[50px] pb-2">
+            <div className="flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => flowActivate(date)}
-                aria-label="Fluir"
-                title="Go With The Flow"
-                className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+                onClick={handleBack}
+                aria-label="Voltar à timeline"
+                className="p-1.5 rounded-lg text-text-muted hover:text-text-secondary transition-colors"
               >
-                <Waves size={16} />
+                <ArrowLeft size={18} />
               </motion.button>
-            ) : null}
+            </div>
+            <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              {showFlowButton && date ? (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => flowActivate(date)}
+                  aria-label="Fluir"
+                  title="Go With The Flow"
+                  className="p-1.5 rounded-lg text-violet-400 hover:text-violet-500 hover:bg-bg-hover transition-colors"
+                >
+                  <Waves size={16} />
+                </motion.button>
+              ) : null}
+            </div>
+          </div>
+
+          {activeBlock && (
+            <DetailBlockHeader block={activeBlock} onUpdate={(updates) => handleUpdate(activeBlock.id, updates)} isNarrow={false} />
+          )}
+
+          <div className="flex-1 overflow-hidden">
+            <DayView date={`${date!}__block__${activeBlockId}`} embedded />
           </div>
         </div>
 
-        {activeBlock && (
-          <DetailBlockHeader block={activeBlock} onUpdate={(updates) => handleUpdate(activeBlock.id, updates)} isNarrow={false} />
-        )}
+        {/* Divider */}
+        <div onMouseDown={handleDividerDown} className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center">
+          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
+          {isDividerDragging && (
+            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
+          )}
+          <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
+        </div>
 
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left: block tasks */}
-          <div style={{ width: `${leftPct}%` }} className="overflow-hidden">
-            <DayView date={`${date!}__block__${activeBlockId}`} embedded />
+        {/* Right: pending tasks + distractions — full height */}
+        <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel flex flex-col">
+          <div className="shrink-0 h-[50px]" />
+          {/* Tab bar */}
+          <div className="shrink-0 px-4 pt-1 pb-2 flex gap-1">
+            <button
+              onClick={() => setDetailRightTab('pending')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                detailRightTab === 'pending' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              Pendentes
+              {pendingCount > 0 && (
+                <span className="ml-1.5 text-xs font-medium text-amber-600">{pendingCount}</span>
+              )}
+            </button>
+            <button
+              onClick={() => setDetailRightTab('distractions')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                detailRightTab === 'distractions' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+              }`}
+            >
+              Distrações
+              {distractions.length > 0 && (
+                <span className="ml-1.5 text-xs font-medium text-distraction">{distractions.length}</span>
+              )}
+            </button>
           </div>
 
-          {/* Divider */}
-          <div onMouseDown={handleDividerDown} className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center">
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
-            {isDividerDragging && (
-              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
-            )}
-            <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
-          </div>
-
-          {/* Right: pending tasks + distractions */}
-          <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel flex flex-col">
-            {/* Tab bar */}
-            <div className="shrink-0 px-4 pt-3 pb-2 flex gap-1">
-              <button
-                onClick={() => setDetailRightTab('pending')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  detailRightTab === 'pending' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                Pendentes
-                {pendingCount > 0 && (
-                  <span className="ml-1.5 text-xs font-medium text-amber-600">{pendingCount}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setDetailRightTab('distractions')}
-                className={`flex-1 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  detailRightTab === 'distractions' ? 'bg-bg-secondary text-text-primary' : 'text-text-muted hover:text-text-secondary'
-                }`}
-              >
-                Distrações
-                {distractions.length > 0 && (
-                  <span className="ml-1.5 text-xs font-medium text-distraction">{distractions.length}</span>
-                )}
-              </button>
-            </div>
-
+          <div className="flex-1 min-h-0">
             {detailRightTab === 'pending' ? (
-              <PendingTasksPanel currentDate={date!} />
+              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} />
             ) : (
               <DistractionSidebar date={date!} showHeader={false} />
             )}

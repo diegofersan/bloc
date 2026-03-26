@@ -4,6 +4,11 @@ import { useClipboardStore } from './clipboardStore'
 
 export const BACKLOG_KEY = '__backlog__'
 
+export interface TaskInstance {
+  date: string       // date key where it was added (e.g. "2026-03-25__block__uuid")
+  addedAt: number    // timestamp
+}
+
 export interface Task {
   id: string
   text: string
@@ -16,6 +21,7 @@ export interface Task {
   isExpanding?: boolean
   estimatedMinutes?: number
   references?: Array<{ date: string; taskId: string }>
+  instanceHistory?: TaskInstance[]
 }
 
 export interface TaskRef {
@@ -742,12 +748,14 @@ export const useTaskStore = create<TaskState>()(
           addedAt: Date.now()
         }
 
+        const now = Date.now()
         set((s) => ({
           tasks: {
             ...s.tasks,
             [originDate]: updateTaskInList(s.tasks[originDate], taskId, (t) => ({
               ...t,
-              references: [...(t.references || []), { date: targetDate, taskId: refId }]
+              references: [...(t.references || []), { date: targetDate, taskId: refId }],
+              instanceHistory: [...(t.instanceHistory || []), { date: targetDate, addedAt: now }]
             }))
           },
           taskRefs: {

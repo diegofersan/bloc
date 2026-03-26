@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus, Clock } from 'lucide-react'
+import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus, Clock, Info } from 'lucide-react'
 import { getSuggestedEstimate, formatEstimate } from '../utils/taskEstimates'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -97,8 +97,20 @@ export default function EditableTaskRow({
   const [pasteLines, setPasteLines] = useState<string[] | null>(null)
   const [editingEstimate, setEditingEstimate] = useState(false)
   const [estimateInput, setEstimateInput] = useState('')
+  const [showInfo, setShowInfo] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const estimateInputRef = useRef<HTMLInputElement>(null)
+
+  // Close info popover on outside click
+  useEffect(() => {
+    if (!showInfo) return
+    const handle = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (!target.closest('[data-task-info]')) setShowInfo(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showInfo])
 
   useEffect(() => {
     setLocalText(task.text)
@@ -369,6 +381,35 @@ export default function EditableTaskRow({
         ) : null)}
 
         <div className={`flex items-center gap-0.5 transition-opacity ${hovered ? 'opacity-100' : 'opacity-0'} group-focus-within:opacity-100`}>
+          {depth === 0 && (
+            <div className="relative" data-task-info>
+              <button
+                onClick={() => setShowInfo(!showInfo)}
+                aria-label="Informações da tarefa"
+                className="shrink-0 p-1 rounded hover:bg-bg-tertiary transition-colors"
+              >
+                <Info size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
+              </button>
+              {showInfo && (
+                <div className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-lg bg-bg-secondary border border-border shadow-lg p-3 text-xs text-text-secondary space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Criada</span>
+                    <span>{format(new Date(task.createdAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-text-muted">Instanciada</span>
+                    <span>{(task.instanceHistory?.length ?? 0) + 1}×</span>
+                  </div>
+                  {task.completed && task.completedAt && (
+                    <div className="flex justify-between">
+                      <span className="text-text-muted">Concluída</span>
+                      <span>{format(new Date(task.completedAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {depth === 0 && !task.completed && !isLinked && !isInsideBlock && (
             <button
               onClick={() => setDeferModalOpen(true)}

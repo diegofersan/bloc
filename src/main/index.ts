@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, screen, Menu } from 'electron'
+import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, Menu } from 'electron'
 import { join } from 'path'
 import { existsSync, writeFileSync, chmodSync } from 'fs'
 import { spawn } from 'child_process'
@@ -18,8 +18,6 @@ if (!gotTheLock) {
 } else {
   let mainWindow: BrowserWindow | null = null
   let tray: Tray | null = null
-  let savedBounds: Electron.Rectangle | null = null
-  let isStealthy = false
 
   function getIconPath(): string | undefined {
     // In production, icons are in the build resources bundled by electron-builder
@@ -198,20 +196,6 @@ rm -rf "$TEMP_DIR"
       {
         label: 'Ver',
         submenu: [
-          {
-            label: 'Modo Stealthy',
-            click: () => {
-              if (!mainWindow) return
-              if (isStealthy) {
-                mainWindow.webContents.send('stealthy:toggle')
-              } else {
-                mainWindow.show()
-                mainWindow.focus()
-                mainWindow.webContents.send('stealthy:toggle')
-              }
-            }
-          },
-          { type: 'separator' as const },
           { role: 'reload' as const },
           { role: 'toggleDevTools' as const }
         ]
@@ -250,112 +234,6 @@ rm -rf "$TEMP_DIR"
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.show()
       mainWindow.focus()
-    })
-
-    // Animate opacity from current to target over duration (ms)
-    function animateOpacity(win: BrowserWindow, from: number, to: number, duration: number): void {
-      const steps = 12
-      const stepMs = duration / steps
-      const delta = (to - from) / steps
-      let step = 0
-      const timer = setInterval(() => {
-        step++
-        if (step >= steps) {
-          win.setOpacity(to)
-          clearInterval(timer)
-        } else {
-          // ease-out quad: decelerating curve
-          const t = step / steps
-          const eased = t * (2 - t)
-          win.setOpacity(from + (to - from) * eased)
-        }
-      }, stepMs)
-    }
-
-    // Stealthy mode IPC handlers
-    ipcMain.handle('stealthy:enter', (_event, opts: { width: number; height: number }) => {
-      if (!mainWindow || isStealthy) return
-      savedBounds = mainWindow.getBounds()
-      isStealthy = true
-
-      const display = screen.getDisplayMatching(savedBounds)
-      const { width: screenW, height: screenH } = display.workArea
-      const x = display.workArea.x + screenW - opts.width - 16
-      const y = display.workArea.y + screenH - opts.height - 16
-
-      // Fade out, then transform, then fade in at target opacity
-      animateOpacity(mainWindow, 1, 0.4, 150)
-      setTimeout(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return
-        mainWindow.setMinimumSize(200, 80)
-        mainWindow.setBackgroundColor('#00000000')
-        if (process.platform === 'darwin') {
-          mainWindow.setWindowButtonVisibility(false)
-        }
-        mainWindow.setBounds({ x, y, width: opts.width, height: opts.height }, true)
-        mainWindow.setAlwaysOnTop(true, 'floating')
-        mainWindow.setContentProtection(true)
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-        mainWindow.webContents.send('stealthy:changed', true)
-        // Fade in to stealthy opacity
-        setTimeout(() => {
-          if (!mainWindow || mainWindow.isDestroyed()) return
-          animateOpacity(mainWindow, 0.4, 0.92, 200)
-        }, 100)
-      }, 150)
-    })
-
-    ipcMain.handle('stealthy:exit', () => {
-      if (!mainWindow || !isStealthy) return
-      isStealthy = false
-
-      const bgColor = nativeTheme.shouldUseDarkColors ? '#1a1a1a' : '#f8f7f4'
-
-      // Fade out stealthy, then restore, then fade in
-      animateOpacity(mainWindow, 0.92, 0.4, 150)
-      setTimeout(() => {
-        if (!mainWindow || mainWindow.isDestroyed()) return
-        mainWindow.setAlwaysOnTop(false)
-        mainWindow.setContentProtection(false)
-        mainWindow.setVisibleOnAllWorkspaces(false)
-        mainWindow.setBackgroundColor(bgColor)
-        if (process.platform === 'darwin') {
-          mainWindow.setWindowButtonVisibility(true)
-        }
-        mainWindow.setResizable(true)
-        mainWindow.setMinimumSize(420, 600)
-        if (savedBounds) {
-          mainWindow.setBounds(savedBounds, true)
-          savedBounds = null
-        }
-        mainWindow.webContents.send('stealthy:changed', false)
-        // Fade back to full opacity
-        setTimeout(() => {
-          if (!mainWindow || mainWindow.isDestroyed()) return
-          animateOpacity(mainWindow, 0.4, 1, 200)
-        }, 100)
-      }, 150)
-    })
-
-    ipcMain.handle('stealthy:resize', (_event, opts: { width: number; height: number; resizable?: boolean }) => {
-      if (!mainWindow || !isStealthy) return
-      const bounds = mainWindow.getBounds()
-      // Anchor to bottom-right: adjust x/y so the bottom-right corner stays fixed
-      const newX = bounds.x + bounds.width - opts.width
-      const newY = bounds.y + bounds.height - opts.height
-      mainWindow.setResizable(opts.resizable !== false)
-      mainWindow.setBounds({ x: newX, y: newY, width: opts.width, height: opts.height }, true)
-    })
-
-    globalShortcut.register('CommandOrControl+Shift+H', () => {
-      if (!mainWindow) return
-      if (isStealthy) {
-        mainWindow.webContents.send('stealthy:toggle')
-      } else {
-        mainWindow.show()
-        mainWindow.focus()
-        mainWindow.webContents.send('stealthy:toggle')
-      }
     })
 
     globalShortcut.register('CommandOrControl+,', () => {

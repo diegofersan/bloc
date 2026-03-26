@@ -72,12 +72,14 @@ function buildQueue(date: string): FlowQueueItem[] {
   const blocks = useTimeBlockStore.getState().blocks[date] || []
   const sorted = [...blocks].sort((a, b) => a.startTime - b.startTime)
   const queue: FlowQueueItem[] = []
+  const seenTaskIds = new Set<string>()
 
   for (const block of sorted) {
     const blockKey = `${date}__block__${block.id}`
     const tasks = taskStore.tasks[blockKey] || []
 
     for (const task of tasks) {
+      seenTaskIds.add(task.id)
       const estimate = getEffectiveEstimate(task)
       queue.push({
         taskId: task.id,
@@ -88,6 +90,46 @@ function buildQueue(date: string): FlowQueueItem[] {
         status: task.completed ? 'completed' : 'pending'
       })
     }
+  }
+
+  // Include linked task references — match to block by project title
+  const refs = taskStore.taskRefs[date] || []
+  const originBlocks = useTimeBlockStore.getState().blocks
+  for (const ref of refs) {
+    if (seenTaskIds.has(ref.originTaskId)) continue
+    const resolvedTask = taskStore.getResolvedTask(ref)
+    if (!resolvedTask || resolvedTask.completed) continue
+
+    // Find the block where the original task lives to get its project title
+    const originBaseDate = ref.originDate.match(/^(.+)__block__(.+)$/)?.[1]
+    const originBlockId = ref.originDate.match(/^(.+)__block__(.+)$/)?.[2]
+    let projectTitle: string | null = null
+    if (originBaseDate && originBlockId) {
+      const originBlock = (originBlocks[originBaseDate] || []).find((b) => b.id === originBlockId)
+      projectTitle = originBlock?.title?.trim().toLowerCase() || null
+    }
+
+    // Find matching block on this date by title
+    let targetBlock = projectTitle
+      ? sorted.find((b) => b.title.trim().toLowerCase() === projectTitle)
+      : null
+    // Fallback: last block
+    if (!targetBlock && sorted.length > 0) {
+      targetBlock = sorted[sorted.length - 1]
+    }
+    if (!targetBlock) continue
+
+    const blockKey = `${date}__block__${targetBlock.id}`
+    const estimate = getEffectiveEstimate(resolvedTask)
+    seenTaskIds.add(ref.originTaskId)
+    queue.push({
+      taskId: ref.id, // use ref ID so it's unique in the queue
+      blockKey,
+      blockId: targetBlock.id,
+      estimatedMinutes: estimate ?? null,
+      timeSpentSeconds: 0,
+      status: 'pending'
+    })
   }
 
   return queue
@@ -629,8 +671,19 @@ useTaskStore.subscribe((state, prevState) => {
     const item = queue[i]
     const currentTasks = state.tasks[item.blockKey] || []
     const prevTasks = prevState.tasks[item.blockKey] || []
-    const task = currentTasks.find((t) => t.id === item.taskId)
-    const prevTask = prevTasks.find((t) => t.id === item.taskId)
+    let task = currentTasks.find((t) => t.id === item.taskId)
+    let prevTask = prevTasks.find((t) => t.id === item.taskId)
+
+    // If not found in direct tasks, check if it's a linked ref and resolve the origin task
+    if (!task && !prevTask) {
+      const date = item.blockKey.match(/^(.+)__block__/)?.[1]
+      const refs = date ? state.taskRefs[date] || [] : []
+      const ref = refs.find((r) => r.id === item.taskId)
+      if (ref) {
+        task = state.getResolvedTask(ref) ?? undefined
+        prevTask = prevState.getResolvedTask(ref) ?? undefined
+      }
+    }
 
     // Task was completed externally (checkbox)
     if (task?.completed && !prevTask?.completed) {
@@ -674,9 +727,16 @@ useTaskStore.subscribe((state, prevState) => {
   const newQueue = queue.filter((item) => {
     const tasks = state.tasks[item.blockKey] || []
     const exists = tasks.some((t) => t.id === item.taskId)
-    if (!exists && item.status !== 'completed') {
-      changed = true
-      return false
+    if (!exists) {
+      // Check if this is a linked task ref (taskId lives in taskRefs, not tasks)
+      const date = item.blockKey.match(/^(.+)__block__/)?.[1]
+      const refs = date ? state.taskRefs[date] || [] : []
+      const isRef = refs.some((r) => r.id === item.taskId)
+      if (isRef) return true // ref still exists, keep it
+      if (item.status !== 'completed') {
+        changed = true
+        return false
+      }
     }
     return true
   })

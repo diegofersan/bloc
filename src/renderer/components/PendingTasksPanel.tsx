@@ -4,29 +4,43 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTaskStore, BACKLOG_KEY } from '../stores/taskStore'
+import { useTimeBlockStore } from '../stores/timeBlockStore'
 
 interface PendingTasksPanelProps {
   currentDate: string
+  projectTitle?: string
 }
 
-export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProps) {
+export default function PendingTasksPanel({ currentDate, projectTitle }: PendingTasksPanelProps) {
   const [search, setSearch] = useState('')
   const tasks = useTaskStore((s) => s.tasks)
   const taskRefs = useTaskStore((s) => s.taskRefs)
   const createTaskRef = useTaskStore((s) => s.createTaskRef)
   const removeTask = useTaskStore((s) => s.removeTask)
+  const allBlocks = useTimeBlockStore((s) => s.blocks)
+
+  const normalizedProject = projectTitle?.trim().toLowerCase()
 
   const { backlogItems, grouped } = useMemo(() => {
-    // Gather all pending tasks across dates (with subtask info)
     const result: Array<{ task: { id: string; text: string; subtasks: Array<{ id: string; text: string; completed: boolean }> }; date: string; displayDate: string }> = []
     const backlog: typeof result = []
+
     for (const [dateKey, taskList] of Object.entries(tasks)) {
-      // Extract base date from composite keys (e.g. "2026-03-10__block__uuid" → "2026-03-10")
       const blockMatch = dateKey.match(/^(.+)__block__(.+)$/)
       const baseDate = blockMatch ? blockMatch[1] : dateKey
-      // Skip tasks from the current day (both day-level and block-scoped)
       if (baseDate === currentDate) continue
       const isBacklog = dateKey === BACKLOG_KEY
+
+      // When filtering by project, only include block-scoped tasks with matching title
+      if (normalizedProject) {
+        if (!blockMatch) continue // skip day-level tasks
+        if (isBacklog) continue
+        const blockId = blockMatch[2]
+        const dateBlocks = allBlocks[baseDate] || []
+        const block = dateBlocks.find((b) => b.id === blockId)
+        if (!block || block.title.trim().toLowerCase() !== normalizedProject) continue
+      }
+
       for (const task of taskList) {
         if (!task.completed) {
           const entry = {
@@ -78,7 +92,7 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
       backlogItems: searchedBacklog,
       grouped: Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
     }
-  }, [tasks, taskRefs, currentDate, search])
+  }, [tasks, taskRefs, currentDate, search, normalizedProject, allBlocks])
 
   const isEmpty = grouped.length === 0 && backlogItems.length === 0
 
@@ -103,7 +117,9 @@ export default function PendingTasksPanel({ currentDate }: PendingTasksPanelProp
       <div className="flex-1 overflow-y-auto px-1 pb-3">
         {isEmpty ? (
           <div className="flex items-center justify-center py-12">
-            <span className="text-sm text-text-muted">Nenhuma tarefa pendente</span>
+            <span className="text-sm text-text-muted">
+              {normalizedProject ? 'Nenhuma tarefa pendente neste projecto' : 'Nenhuma tarefa pendente'}
+            </span>
           </div>
         ) : (
           <>

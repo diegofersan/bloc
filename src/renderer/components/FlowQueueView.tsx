@@ -41,6 +41,9 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const taskTimerStartedAt = useFlowStore((s) => s.taskTimerStartedAt)
   const taskAccumulatedSeconds = useFlowStore((s) => s.taskAccumulatedSeconds)
   const allTasks = useTaskStore((s) => s.tasks)
+  const taskRefs = useTaskStore((s) => s.taskRefs[date]) ?? []
+  const getResolvedTask = useTaskStore((s) => s.getResolvedTask)
+  const toggleTaskRef = useTaskStore((s) => s.toggleTaskRef)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const blocks = allBlocks[date] ?? EMPTY_BLOCKS
   const toggleTask = useTaskStore((s) => s.toggleTask)
@@ -255,9 +258,15 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
 
   const handleToggleTask = useCallback(
     (blockKey: string, taskId: string) => {
-      toggleTask(blockKey, taskId)
+      // Check if this is a linked task reference
+      const isRef = taskRefs.some((r) => r.id === taskId)
+      if (isRef) {
+        toggleTaskRef(date, taskId)
+      } else {
+        toggleTask(blockKey, taskId)
+      }
     },
-    [toggleTask]
+    [toggleTask, toggleTaskRef, taskRefs, date]
   )
 
   // Add task per block
@@ -396,7 +405,11 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                   )}
                   {items.map(({ item, queueIndex }, positionInBlock) => {
                     const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
-                    const task = blockTasks.find((t) => t.id === item.taskId)
+                    let task = blockTasks.find((t) => t.id === item.taskId)
+                    // Resolve linked task references
+                    const ref = !task ? taskRefs.find((r) => r.id === item.taskId) : null
+                    const linkedTask = ref ? getResolvedTask(ref) : null
+                    if (!task && linkedTask) task = linkedTask
                     if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
 
                     const taskLabel = task?.text || 'Tarefa'
