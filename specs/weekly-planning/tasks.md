@@ -35,15 +35,15 @@
 
 > Estas tarefas são feitas em pares — nunca commitar mudança a um serializer sem a outra.
 
-- [ ] **T3.1** — Auditar passthrough actual: nos dois parsers, criar ficheiro com secção desconhecida `## Foo`, parse + serialize, ver se sobrevive. Documentar resultado em comment do PR. Se não sobrevive, adicionar `unknownSections: Record<string,string>` em `DayFileData` e preservar.
+- [x] **T3.1** — Auditoria: ambos os parsers descartam silenciosamente secções desconhecidas (split em `^## /m`, dispatch só para 3 nomes). Adicionado `unknownSections: Record<string,string>` em `DayFileData` (nos dois serializers) com round-trip verbatim.
   - Ficheiros: `mcp-server/src/markdown.ts`, `src/main/services/markdownSerializer.ts`
-- [ ] **T3.2** — Parser de `## Referências` no MCP: deserialize linhas para `TaskRef[]`. Snapshot title é descartado na leitura (re-gerado no save). **Critério**: file fixture é parsed correctamente.
+- [x] **T3.2** — Parser de `## Referências` no MCP: `parseRefLine` + `parseRefsSection`, suporta título com `\"` escapado, requer `@refId @origin @taskId`.
   - Ficheiro: `mcp-server/src/markdown.ts`
-- [ ] **T3.3** — Serialize de `## Referências` no MCP: insere após `## Tarefas` se houver refs. Resolve título de `originDate` se disponível na invocação (best-effort). **Critério**: round-trip parse→serialize estável.
+- [x] **T3.3** — Serialize de `## Referências` no MCP: `serializeRef` emite após `## Tarefas` se `data.refs` não vazio. `escapeRefTitle` cobre `\\` e `"`.
   - Ficheiro: `mcp-server/src/markdown.ts`
-- [ ] **T3.4** — Mesma mudança no serializer do main (paridade). **Critério**: snapshot test — serializar mesmo `DayFileData` em ambos produz string byte-equal (excepto ordering deterministico).
+- [x] **T3.4** — Mesma mudança aplicada ao serializer do main. Round-trip verificado byte-equal contra o do MCP em 3 fixtures.
   - Ficheiro: `src/main/services/markdownSerializer.ts`
-- [ ] **T3.5** — Teste de paridade: pequeno script em `scripts/check-md-parity.mjs` que pega 1 fixture, parse+serialize com ambos os serializers, faz diff. **Critério**: zero diff. Manter como ferramenta para futuras mudanças.
+- [x] **T3.5** — `scripts/check-md-parity.ts` (Node 22 strip-types). 3 fixtures: tasks-only, refs+escapes+distractions, blocks+block-tasks+secção desconhecida `## Foo`. Verifica deserialize parity (JSON-equal), serialize parity (byte-equal), round-trip stability dos dois lados. **Estado**: 3/3 verde.
 
 ---
 
