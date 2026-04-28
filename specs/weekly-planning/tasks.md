@@ -11,23 +11,23 @@
 
 ### 0. Pré-flight — branch e estado
 
-- [ ] **T0.1** — Confirmar `git status` limpo, branch `feat/weekly-planning`. Se há `node_modules` desactualizados após pull, correr `npm i` na raiz e em `mcp-server/`.
+- [x] **T0.1** — Confirmar `git status` limpo, branch `feat/weekly-planning`. Se há `node_modules` desactualizados após pull, correr `npm i` na raiz e em `mcp-server/`.
 
 ---
 
 ### 1. Spike de build (R5: validar shared/ antes de investir)
 
-- [ ] **T1.1** — Criar `shared/types.ts` mínimo (1 export stub). Adicionar `"../shared/**/*"` ao `include` em `mcp-server/tsconfig.json`. Correr `cd mcp-server && npm run build`. **Critério**: `mcp-server/dist/shared/types.js` existe e `node mcp-server/dist/index.js --help` arranca sem erro.
-- [ ] **T1.2** — Path alias renderer: em `tsconfig.web.json` adicionar `"paths": { "@shared/*": ["../shared/*"] }` e respectivo `baseUrl`. Adicionar mesma resolução ao `electron.vite.config.ts` (alias do Vite). **Critério**: importar `@shared/types` num componente de teste compila e hot-reload funciona.
+- [x] **T1.1** — Criar `shared/types.ts` mínimo (1 export stub). Adicionar `"../shared/**/*"` ao `include` em `mcp-server/tsconfig.json`. Correr `cd mcp-server && npm run build`. **Critério**: `mcp-server/dist/shared/types.js` existe e `node mcp-server/dist/index.js --help` arranca sem erro.
+- [x] **T1.2** — Path alias renderer: em `tsconfig.web.json` adicionar `"paths": { "@shared/*": ["../shared/*"] }` e respectivo `baseUrl`. Adicionar mesma resolução ao `electron.vite.config.ts` (alias do Vite). **Critério**: importar `@shared/types` num componente de teste compila e hot-reload funciona.
 
 ---
 
 ### 2. Pacote `shared/` — conteúdo real
 
-- [ ] **T2.1** — `shared/types.ts`: definir `Task`, `TaskRef`, `TimeBlock`, `Distraction`, `DayFileData` consolidando os tipos hoje duplicados entre renderer e MCP. **Critério**: tsc verde em ambos os lados.
-- [ ] **T2.2** — `shared/refs.ts`: `dedupKey(ref)`, `isSameRef(a, b)`, `makeRefId()`. **Critério**: testes triviais via REPL/script.
-- [ ] **T2.3** — `shared/priority.ts`: `priorityScore(task, ctx)` conforme fórmula do plan. Pesos como constantes exportadas. **Critério**: input determinístico produz score conhecido.
-- [ ] **T2.4** — `shared/distribute.ts`: `distribute({ pending, days, weights? })` → `assignments[]`. Round-robin pelos dias com menos refs. Sem I/O. **Critério**: dado backlog fixo + 7 dias vazios, output reprodutível.
+- [x] **T2.1** — `shared/types.ts`: definir `Task`, `TaskRef`, `TimeBlock`, `Distraction`, `DayFileData` consolidando os tipos hoje duplicados entre renderer e MCP. **Critério**: tsc verde em ambos os lados.
+- [x] **T2.2** — `shared/refs.ts`: `dedupKey(ref)`, `isSameRef(a, b)`, `makeRefId()`. **Critério**: testes triviais via REPL/script.
+- [x] **T2.3** — `shared/priority.ts`: `priorityScore(task, ctx)` conforme fórmula do plan. Pesos como constantes exportadas. **Critério**: input determinístico produz score conhecido.
+- [x] **T2.4** — `shared/distribute.ts`: `distribute({ pending, days, weights? })` → `assignments[]`. Round-robin pelos dias com menos refs. Sem I/O. **Critério**: dado backlog fixo + 7 dias vazios, output reprodutível.
 
 ---
 
