@@ -17,6 +17,7 @@ interface TaskRefData {
   id: string
   originDate: string
   originTaskId: string
+  titleSnapshot: string
   addedAt: number
 }
 
@@ -47,7 +48,7 @@ interface DayFileData {
   tasks: TaskData[]
   distractions: DistractionData[]
   timeBlocks?: TimeBlockData[]
-  references?: TaskRefData[]
+  refs?: TaskRefData[]
   blockTasks?: Record<string, TaskData[]>
 }
 
@@ -90,12 +91,32 @@ function dataToTask(data: TaskData, date: string): Task {
 }
 
 function taskRefToData(ref: TaskRef): TaskRefData {
+  // Refresh titleSnapshot from the origin task on each write so it doesn't
+  // go stale after a rename. Falls back to whatever snapshot we already have.
+  const originTasks = useTaskStore.getState().tasks[ref.originDate]
+  let title = ref.titleSnapshot ?? ''
+  if (originTasks) {
+    const found = findTaskByIdRecursive(originTasks, ref.originTaskId)
+    if (found) title = found.text
+  }
   return {
     id: ref.id,
     originDate: ref.originDate,
     originTaskId: ref.originTaskId,
+    titleSnapshot: title,
     addedAt: ref.addedAt
   }
+}
+
+function findTaskByIdRecursive(tasks: Task[], id: string): Task | null {
+  for (const t of tasks) {
+    if (t.id === id) return t
+    if (t.subtasks.length > 0) {
+      const sub = findTaskByIdRecursive(t.subtasks, id)
+      if (sub) return sub
+    }
+  }
+  return null
 }
 
 function dataToTaskRef(data: TaskRefData): TaskRef {
@@ -103,6 +124,7 @@ function dataToTaskRef(data: TaskRefData): TaskRef {
     id: data.id,
     originDate: data.originDate,
     originTaskId: data.originTaskId,
+    titleSnapshot: data.titleSnapshot,
     addedAt: data.addedAt
   }
 }
@@ -189,7 +211,7 @@ function buildDayFileData(date: string): DayFileData {
     tasks: tasks.map(taskToData),
     distractions: distractions.map(distractionToData),
     timeBlocks: timeBlocks.map(timeBlockToData),
-    references: taskRefs.map(taskRefToData),
+    refs: taskRefs.length > 0 ? taskRefs.map(taskRefToData) : undefined,
     blockTasks: Object.keys(blockTasks).length > 0 ? blockTasks : undefined
   }
 }
@@ -233,7 +255,7 @@ function applyExternalChange(data: DayFileData): void {
     })
 
     // Apply task references
-    const newRefs = (data.references || []).map(dataToTaskRef)
+    const newRefs = (data.refs || []).map(dataToTaskRef)
     useTaskStore.setState({
       taskRefs: { ...taskState.taskRefs, [data.date]: newRefs }
     })
@@ -316,8 +338,8 @@ async function loadAllFromICloud(): Promise<void> {
     if (day.distractions.length > 0) {
       newDistractions[day.date] = day.distractions.map((d) => dataToDistraction(d, day.date))
     }
-    if (day.references && day.references.length > 0) {
-      newTaskRefs[day.date] = day.references.map(dataToTaskRef)
+    if (day.refs && day.refs.length > 0) {
+      newTaskRefs[day.date] = day.refs.map(dataToTaskRef)
     }
     if (day.pomodoros > 0) {
       newPomodoros[day.date] = day.pomodoros

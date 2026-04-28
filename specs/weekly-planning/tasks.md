@@ -62,14 +62,15 @@
 
 ### 5. Stores Zustand (renderer)
 
-- [ ] **T5.1** — `settingsStore`: campo `weekViewDays: 5 | 7` (default 7), setter `setWeekViewDays`. Bumpar versão `persist()` se necessário com migration trivial. **Critério**: alterar valor sobrevive a reload.
-  - Ficheiro: `src/renderer/stores/settingsStore.ts`
-- [ ] **T5.2** — `taskStore`: hidratar `taskRefs` a partir do MD nos paths que hoje populam `tasks` (procurar `setState` após `read_day`). **Critério**: MD com 1 ref aparece em `taskRefs[date]` após sync.
-  - Ficheiro: `src/renderer/stores/taskStore.ts`
-- [ ] **T5.3** — `taskStore`: `createTaskRef` / `toggleTaskRef` / `removeTaskRef` passam a chamar `write_day` do destino afectado (mesmo padrão das acções de tasks/blocks). **Critério**: criar ref no renderer → ler MD em disco → ref presente.
-- [ ] **T5.4** — `taskStore`: helper `getPendingByBlock()` (puro). **Critério**: estado fixture com pendentes em 2 blocos retorna 2 grupos com counts certos.
-- [ ] **T5.5** — `taskStore`: `distributeTasks(plan)` (bulk + dedup + batch write por dia destino) e `undoLastDistribution()` (snapshot revert). **Critério**: aplicar 5 refs em 3 dias → 3 writes, não 5; undo reverte estado e MD.
-- [ ] **T5.6** — Novo `weeklyPlanningUiStore` em `src/renderer/stores/weeklyPlanningUiStore.ts`: estado conforme plan, persiste só `weekStart`. **Critério**: navegar para outra semana, reload, volta à mesma semana.
+- [x] **T5.1** — `settingsStore.weekViewDays: 5 | 7` (default 7) + `setWeekViewDays`. Não bumpou versão (campo opcional novo, defaults rehydratam).
+- [x] **T5.2** — Hydrate corrigido: o syncService já subscrevia `taskRefs` mas marshalava como `references` (campo legado nunca persistido pelo serializer). Renomeado para `refs` em `DayFileData`/`buildDayFileData`/`applyExternalChange`/`loadAllFromICloud`, alinhando com o schema MD do T3.
+  - Ficheiro: `src/renderer/services/syncService.ts`
+- [x] **T5.3** — Same: as acções `createTaskRef`/`toggleTaskRef`/`removeTaskRef` mutam `state.taskRefs`; o subscribe do syncService faz `debouncedWrite(targetDate)` automaticamente. Adicionado `titleSnapshot` ao `TaskRef` + round-trip (`taskRefToData` re-busca origem em cada save para evitar staleness após rename). `createTaskRef` agora skipa duplicados.
+  - Ficheiros: `src/renderer/stores/taskStore.ts`, `src/renderer/services/syncService.ts`
+- [x] **T5.4** — `getPendingByBlock()`: pura, agrupa por blockId, "Sem bloco" no fim.
+- [x] **T5.5** — `distributeTasks(plan)`: bulk + dedup; mantém `lastDistribution` em memória (não persistido). `undoLastDistribution()` re-usa `removeTaskRef` em ordem reversa.
+- [x] **T5.6** — `weeklyPlanningUiStore`: persiste só `weekStart` (drag/collapsed são session-only por design).
+  - Ficheiro: `src/renderer/stores/weeklyPlanningUiStore.ts`
 
 ---
 

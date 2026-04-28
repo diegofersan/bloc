@@ -9,6 +9,8 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
   gemini: 'gemini-2.0-flash'
 }
 
+export type WeekViewDays = 5 | 7
+
 interface SettingsState {
   provider: AIProvider
   apiKey: string
@@ -17,6 +19,8 @@ interface SettingsState {
   secondaryTimezone: string | null
   githubToken: string
   confettiOnComplete: boolean
+  /** Weekly planning view: show 5 (Mon–Fri) or 7 (Mon–Sun) day columns. */
+  weekViewDays: WeekViewDays
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
@@ -24,6 +28,7 @@ interface SettingsState {
   setSecondaryTimezone: (tz: string | null) => void
   setGithubToken: (token: string) => void
   setConfettiOnComplete: (v: boolean) => void
+  setWeekViewDays: (days: WeekViewDays) => void
   isConfigured: () => boolean
 }
 
@@ -37,6 +42,7 @@ export const useSettingsStore = create<SettingsState>()(
       secondaryTimezone: null,
       githubToken: '',
       confettiOnComplete: true,
+      weekViewDays: 7,
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },
@@ -63,6 +69,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setConfettiOnComplete: (v) => {
         set({ confettiOnComplete: v })
+      },
+
+      setWeekViewDays: (days) => {
+        set({ weekViewDays: days })
       },
 
       isConfigured: () => {
