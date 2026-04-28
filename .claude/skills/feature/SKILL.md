@@ -12,13 +12,21 @@ Conduz o desenvolvimento de uma nova funcionalidade em **4 fases sequenciais**, 
 Antes de qualquer coisa: descobre em que fase estás.
 
 1. Determina o **slug** (kebab-case do nome da feature). Se o utilizador não disse, pergunta.
-2. Verifica `specs/<slug>/` (cria a pasta se necessário):
+2. **Branch** — toda a feature vive em `feat/<slug>`:
+   - Se já estás em `feat/<slug>` → ok, continua.
+   - Se a branch existe localmente mas não estás nela → `git switch feat/<slug>`.
+   - Se a branch não existe → estás a iniciar uma feature nova:
+     - Verifica `git status` limpo. Se houver alterações por commitar, pára e pergunta antes de seguir (não arrastes trabalho não relacionado para a branch).
+     - Confirma que partes de `main` actualizado: `git switch main && git pull --ff-only` (avisa o utilizador antes se não puder fast-forward).
+     - Cria: `git switch -c feat/<slug>`.
+   - **Nunca aninhar features**: se o utilizador pede "nova feature" e já estás numa `feat/*` diferente, pára e pergunta se quer voltar a `main` primeiro.
+3. Verifica `specs/<slug>/` (cria a pasta se necessário):
    - Sem ficheiros → começa em **Fase 1: spec**
    - Existe `spec.md` mas não `plan.md` → **Fase 2: plan**
    - Existe `plan.md` mas não `tasks.md` → **Fase 3: tasks**
    - Existe `tasks.md` → **Fase 4: implement**
-3. Se o utilizador pedir explicitamente uma fase ("refaz o plan", "salta para tasks"), respeita.
-4. Confirma com o utilizador em que fase vais entrar antes de produzir output.
+4. Se o utilizador pedir explicitamente uma fase ("refaz o plan", "salta para tasks"), respeita.
+5. Confirma com o utilizador em que fase vais entrar antes de produzir output.
 
 ---
 
