@@ -9,14 +9,18 @@ import {
   readDay,
   writeDay,
   emptyDay,
+  readWeek,
   getBasePath
 } from './storage.js'
 import type {
   TaskData,
   TimeBlockData,
   TimeBlockColor,
+  TaskRefData,
   DayFileData
 } from './markdown.js'
+import { dedupKey, makeRefId } from './shared/refs.js'
+import { distribute, type DistributeCandidate } from './shared/distribute.js'
 
 // --- Helpers ---
 
@@ -213,26 +217,21 @@ server.tool(
 // read_week
 server.tool(
   'read_week',
-  'Read data for a full week (Monday to Sunday)',
-  { date: z.string().optional().describe('Any date in the week (YYYY-MM-DD). Defaults to today.') },
-  async ({ date }) => {
-    const target = date ?? todayStr()
-    const weekDates = getWeekDates(target)
-    const lines: string[] = [`# Week of ${weekDates[0]} to ${weekDates[6]}`, '']
-
-    for (const d of weekDates) {
-      const data = readDay(d)
-      if (data) {
-        lines.push(formatDaySummary(data))
-        lines.push('---')
-        lines.push('')
-      }
+  'Read structured data for a full week. Pass any date in the week — it is normalized to Monday. Returns JSON with one entry per day (Mon..Sun); empty days have data: null. Includes refs (cross-day task pointers).',
+  {
+    week_start: z.string().optional().describe('Any date in the week (YYYY-MM-DD). Defaults to today. Always normalized to Monday of that week.'),
+    days: z.number().int().min(1).max(14).optional().describe('Number of days to read (default 7).')
+  },
+  async ({ week_start, days }) => {
+    const anchor = week_start ?? todayStr()
+    const monday = formatDate(getMonday(anchor))
+    const week = await readWeek(monday, days ?? 7)
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ weekStart: monday, days: week }, null, 2)
+      }]
     }
-
-    if (lines.length <= 2) {
-      return { content: [{ type: 'text', text: `No data found for week of ${target}` }] }
-    }
-    return { content: [{ type: 'text', text: lines.join('\n') }] }
   }
 )
 
@@ -639,6 +638,320 @@ server.tool(
 
     return {
       content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }]
+    }
+  }
+)
+
+// --- Weekly planning helpers ---
+
+interface PendingHit {
+  task: TaskData
+  originDate: string
+  /** 'day' = top-level task on the day; 'block' = under blockTasks[blockId]. */
+  parentKind: 'day' | 'block'
+  /** blockId when parentKind === 'block', else null. */
+  blockId: string | null
+  /** Display title for grouping: block title or "Sem bloco". */
+  groupTitle: string
+}
+
+/** Walk a top-level task tree and return only the pending leaves. */
+function collectPending(tasks: TaskData[]): TaskData[] {
+  const out: TaskData[] = []
+  for (const t of tasks) {
+    if (!t.completed) out.push(t)
+    if (t.subtasks.length > 0) out.push(...collectPending(t.subtasks))
+  }
+  return out
+}
+
+/**
+ * Iterate every day file and collect pending tasks, grouped by their parent
+ * block (or "no block"). `originDate` is the day where the task lives.
+ */
+function listAllPending(): PendingHit[] {
+  const hits: PendingHit[] = []
+  const dates = listDayFiles()
+  for (const date of dates) {
+    const data = readDay(date)
+    if (!data) continue
+    for (const t of collectPending(data.tasks)) {
+      hits.push({ task: t, originDate: date, parentKind: 'day', blockId: null, groupTitle: 'Sem bloco' })
+    }
+    if (data.blockTasks) {
+      for (const [blockId, tasks] of Object.entries(data.blockTasks)) {
+        const blockTitle = data.timeBlocks?.find((b) => b.id === blockId)?.title ?? blockId
+        for (const t of collectPending(tasks)) {
+          hits.push({ task: t, originDate: date, parentKind: 'block', blockId, groupTitle: blockTitle })
+        }
+      }
+    }
+  }
+  return hits
+}
+
+/** Locate an origin task across day-level and block-level lists. */
+function findOriginTask(data: DayFileData, taskId: string): TaskData | null {
+  const top = findTask(data.tasks, taskId)
+  if (top) return top
+  if (data.blockTasks) {
+    for (const tasks of Object.values(data.blockTasks)) {
+      const found = findTask(tasks, taskId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// list_pending_tasks
+server.tool(
+  'list_pending_tasks',
+  'List all pending (uncompleted) tasks across every day file, grouped by their parent block. Use this to see the full backlog before assigning refs to days.',
+  {
+    block_id: z.string().optional().describe('Filter to tasks under this block (across all days).'),
+    origin_date: z.string().optional().describe('Filter to tasks living on this date (YYYY-MM-DD).')
+  },
+  async ({ block_id, origin_date }) => {
+    let hits = listAllPending()
+    if (block_id) hits = hits.filter((h) => h.blockId === block_id)
+    if (origin_date) hits = hits.filter((h) => h.originDate === origin_date)
+
+    // Group by groupTitle for the response.
+    const groups = new Map<string, PendingHit[]>()
+    for (const h of hits) {
+      const arr = groups.get(h.groupTitle) ?? []
+      arr.push(h)
+      groups.set(h.groupTitle, arr)
+    }
+
+    const payload = {
+      total: hits.length,
+      groups: [...groups.entries()].map(([title, items]) => ({
+        groupTitle: title,
+        count: items.length,
+        items: items.map((h) => ({
+          taskId: h.task.id,
+          text: h.task.text,
+          originDate: h.originDate,
+          parentKind: h.parentKind,
+          blockId: h.blockId,
+          createdAt: h.task.createdAt,
+          estimatedMinutes: h.task.estimatedMinutes ?? null
+        }))
+      }))
+    }
+
+    return { content: [{ type: 'text', text: JSON.stringify(payload, null, 2) }] }
+  }
+)
+
+// create_task_ref
+server.tool(
+  'create_task_ref',
+  'Create a reference to an origin task on a target date. The origin task must exist and be pending. Idempotent: calling twice with the same (origin, task, target) is a no-op.',
+  {
+    target_date: z.string().describe('Day to attach the ref to (YYYY-MM-DD).'),
+    origin_date: z.string().describe('Day where the origin task lives (YYYY-MM-DD).'),
+    origin_task_id: z.string().describe('Task ID of the origin task.')
+  },
+  async ({ target_date, origin_date, origin_task_id }) => {
+    if (target_date === origin_date) {
+      return {
+        content: [{ type: 'text', text: 'target_date and origin_date are the same — no ref needed.' }],
+        isError: true
+      }
+    }
+
+    const originDay = readDay(origin_date)
+    if (!originDay) {
+      return { content: [{ type: 'text', text: `No data found for origin ${origin_date}` }], isError: true }
+    }
+    const origin = findOriginTask(originDay, origin_task_id)
+    if (!origin) {
+      return { content: [{ type: 'text', text: `Task ${origin_task_id} not found on ${origin_date}` }], isError: true }
+    }
+    if (origin.completed) {
+      return { content: [{ type: 'text', text: `Task ${origin_task_id} is already completed — refs are for pending tasks.` }], isError: true }
+    }
+
+    const target = readDay(target_date) ?? emptyDay(target_date)
+    const refs = target.refs ?? []
+    const wantKey = dedupKey({ originDate: origin_date, originTaskId: origin_task_id })
+    const existing = refs.find((r) => dedupKey({ originDate: r.originDate, originTaskId: r.originTaskId }) === wantKey)
+    if (existing) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({ created: false, reason: 'duplicate', refId: existing.id }, null, 2)
+        }]
+      }
+    }
+
+    const ref: TaskRefData = {
+      id: makeRefId(),
+      originDate: origin_date,
+      originTaskId: origin_task_id,
+      titleSnapshot: origin.text,
+      addedAt: Date.now()
+    }
+    target.refs = [...refs, ref]
+    writeDay(target)
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ created: true, ref }, null, 2)
+      }]
+    }
+  }
+)
+
+// delete_task_ref
+server.tool(
+  'delete_task_ref',
+  'Remove a ref from a target date. Idempotent: returns deleted: false if the ref does not exist.',
+  {
+    target_date: z.string().describe('Day the ref lives on (YYYY-MM-DD).'),
+    ref_id: z.string().describe('Ref ID to remove.')
+  },
+  async ({ target_date, ref_id }) => {
+    const target = readDay(target_date)
+    if (!target || !target.refs || target.refs.length === 0) {
+      return { content: [{ type: 'text', text: JSON.stringify({ deleted: false }, null, 2) }] }
+    }
+    const before = target.refs.length
+    target.refs = target.refs.filter((r) => r.id !== ref_id)
+    if (target.refs.length === before) {
+      return { content: [{ type: 'text', text: JSON.stringify({ deleted: false }, null, 2) }] }
+    }
+    if (target.refs.length === 0) delete target.refs
+    writeDay(target)
+    return { content: [{ type: 'text', text: JSON.stringify({ deleted: true }, null, 2) }] }
+  }
+)
+
+// distribute_tasks_for_week
+server.tool(
+  'distribute_tasks_for_week',
+  'Distribute pending tasks across a week. Scores each candidate by priority (age, instances, estimate, block load) and round-robins onto days with the fewest existing assignments. Use dry_run: true to preview without writing.',
+  {
+    week_start: z.string().optional().describe('Any date in the target week (YYYY-MM-DD). Normalized to Monday. Defaults to today.'),
+    days: z.number().int().min(1).max(7).optional().describe('Number of days to fill, starting Monday. Default 7.'),
+    dry_run: z.boolean().optional().describe('If true, returns the plan without writing any refs.')
+  },
+  async ({ week_start, days, dry_run }) => {
+    const anchor = week_start ?? todayStr()
+    const monday = formatDate(getMonday(anchor))
+    const dayCount = days ?? 7
+    const week = await readWeek(monday, dayCount)
+    const dayDates = week.map((w) => w.date)
+
+    // Existing refs per day — keys = dedupKey of {originDate, taskId} so we
+    // skip days that already point to the same origin task.
+    const existingRefsByDay: Record<string, Set<string>> = {}
+    for (const w of week) {
+      const set = new Set<string>()
+      for (const r of w.data?.refs ?? []) {
+        set.add(dedupKey({ originDate: r.originDate, originTaskId: r.originTaskId }))
+      }
+      existingRefsByDay[w.date] = set
+    }
+
+    // Build candidate pool. Skip tasks whose origin already lives in the
+    // target week — placing a ref to them is redundant.
+    const inWeekDates = new Set(dayDates)
+    const pending = listAllPending().filter((h) => !inWeekDates.has(h.originDate))
+
+    // instanceCount: how many days across the whole archive already reference
+    // this task. Cheap to compute by scanning every day's refs once.
+    const instanceCounts = new Map<string, number>()
+    for (const date of listDayFiles()) {
+      const day = readDay(date)
+      for (const r of day?.refs ?? []) {
+        const key = dedupKey({ originDate: r.originDate, originTaskId: r.originTaskId })
+        instanceCounts.set(key, (instanceCounts.get(key) ?? 0) + 1)
+      }
+    }
+
+    // blockPendingCount: how many other pending tasks share the same block on
+    // the same origin day. Bigger backlogs nudge a task's score up.
+    const blockPendingCounts = new Map<string, number>()
+    for (const h of listAllPending()) {
+      const k = `${h.originDate}::${h.blockId ?? ''}`
+      blockPendingCounts.set(k, (blockPendingCounts.get(k) ?? 0) + 1)
+    }
+
+    const candidates: DistributeCandidate[] = pending.map((h) => {
+      const refKey = dedupKey({ originDate: h.originDate, originTaskId: h.task.id })
+      const blockKey = `${h.originDate}::${h.blockId ?? ''}`
+      return {
+        task: h.task,
+        originDate: h.originDate,
+        blockPendingCount: blockPendingCounts.get(blockKey) ?? 0,
+        instanceCount: instanceCounts.get(refKey) ?? 0
+      }
+    })
+
+    const assignments = distribute({
+      pending: candidates,
+      days: dayDates,
+      existingRefsByDay
+    })
+
+    if (dry_run) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            weekStart: monday,
+            dryRun: true,
+            assignments,
+            candidatesConsidered: candidates.length
+          }, null, 2)
+        }]
+      }
+    }
+
+    // Apply: group assignments by targetDate, write each day once.
+    const byTarget = new Map<string, typeof assignments>()
+    for (const a of assignments) {
+      const arr = byTarget.get(a.targetDate) ?? []
+      arr.push(a)
+      byTarget.set(a.targetDate, arr)
+    }
+
+    const applied: { targetDate: string; refId: string; originDate: string; taskId: string }[] = []
+    for (const [targetDate, group] of byTarget) {
+      const day = readDay(targetDate) ?? emptyDay(targetDate)
+      const refs = day.refs ?? []
+      for (const a of group) {
+        const originDay = readDay(a.originDate)
+        const origin = originDay ? findOriginTask(originDay, a.taskId) : null
+        if (!origin) continue // skip silently — origin vanished mid-distribution
+        const ref: TaskRefData = {
+          id: makeRefId(),
+          originDate: a.originDate,
+          originTaskId: a.taskId,
+          titleSnapshot: origin.text,
+          addedAt: Date.now()
+        }
+        refs.push(ref)
+        applied.push({ targetDate, refId: ref.id, originDate: a.originDate, taskId: a.taskId })
+      }
+      day.refs = refs
+      writeDay(day)
+    }
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          weekStart: monday,
+          dryRun: false,
+          appliedCount: applied.length,
+          applied
+        }, null, 2)
+      }]
     }
   }
 )

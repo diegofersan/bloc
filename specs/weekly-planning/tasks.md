@@ -49,14 +49,14 @@
 
 ### 4. MCP server — storage + tools
 
-- [ ] **T4.1** — `storage.ts`: `readWeek(weekStartDate, days = 7)` lê N dias em `Promise.all`. **Critério**: input segunda → array com 7 entradas ordenadas.
+- [x] **T4.1** — `storage.ts`: `readWeek(weekStartDate, days = 7)` lê N dias em `Promise.all`, `null` para dias sem ficheiro. Indexável posicionalmente.
   - Ficheiro: `mcp-server/src/storage.ts`
-- [ ] **T4.2** — Tool `read_week`: registo no `index.ts`, schema Zod (ou equivalente actual), normaliza `week_start` para segunda. **Critério**: chamada via stdio devolve estrutura esperada.
-- [ ] **T4.3** — Tool `list_pending_tasks`: itera `listDays`, agrega pendentes, agrupa por bloco-pai, aplica filtros opcionais. **Critério**: dia com 3 pendentes em 2 blocos retorna 2 grupos.
-- [ ] **T4.4** — Tool `create_task_ref`: lê `target_date`, valida origem existe + pendente, lê título de origem, escreve. **Critério**: file MD ganha linha em `## Referências`; chamar 2× igual retorna skip.
-- [ ] **T4.5** — Tool `delete_task_ref`: remove linha do MD. **Critério**: file perde a linha; idempotente em ref inexistente (devolve `deleted: false`).
-- [ ] **T4.6** — Tool `distribute_tasks_for_week`: usa `read_week` + `list_pending_tasks`, importa `priorityScore` e `distribute` de `@shared/...` (ou path relativo `../../shared/...` no MCP). Implementa `dry_run`. **Critério**: dry_run não escreve; non-dry escreve refs nos dias dos assignments; output coerente.
-- [ ] **T4.7** — Build mcp-server (`npm run build`), smoke test de cada tool nova via cliente MCP local. **Critério**: 5 tools listadas em `tools/list`; cada uma responde a um input válido.
+- [x] **T4.2** — Tool `read_week` reescrita: output JSON estruturado (`{ weekStart, days: [{date, data}] }`), `week_start` normalizado para segunda, `days` configurável (1-14).
+- [x] **T4.3** — Tool `list_pending_tasks`: agrega pendentes de `listDayFiles` (top-level + blockTasks), agrupa por bloco (titulo de `timeBlocks`), filtros opcionais `block_id`/`origin_date`.
+- [x] **T4.4** — Tool `create_task_ref`: valida origem pendente (rejeita completed e same-day), `dedupKey` para idempotência, escreve `## Referências` no target.
+- [x] **T4.5** — Tool `delete_task_ref`: remove ref por id; remove a key `refs` se vazia; idempotente.
+- [x] **T4.6** — Tool `distribute_tasks_for_week`: importa de `./shared/distribute.js` + `./shared/refs.js`. Calcula `instanceCount` (refs já existentes archive-wide) + `blockPendingCount` (mesma origem+bloco). Skipa origens dentro da semana. `dry_run` não escreve. Apply: 1 write por dia destino.
+- [x] **T4.7** — `npm run build` verde; smoke test em `mcp-server/scripts/smoke-test-weekly.mjs` cobre os 12 cenários acima (tools/list, structured read_week, list_pending filtros, create idempotência+rejeição completed, delete idempotente, distribute dry_run sem writes, distribute apply com refs no MD). **Estado**: 12/12 verde. Tarball `npm pack --dry-run` inclui `dist/shared/*.js`.
 
 ---
 
