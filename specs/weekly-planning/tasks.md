@@ -76,18 +76,16 @@
 
 ### 6. UI — rota, botão e componentes
 
-- [ ] **T6.1** — Rota `/week/:weekStart?` em `src/renderer/App.tsx`. Lazy-load do `WeeklyPlanningView`. **Critério**: navegação manual via URL abre vista vazia.
-- [ ] **T6.2** — Botão `CalendarDays` (lucide) na toolbar do `CalendarView.tsx` (linhas 113-196), tooltip "Planeamento semanal", atalho `⌘⇧W` (verificar conflitos no `keyboardShortcuts.ts` ou equivalente antes). **Critério**: clique navega; atalho dispara navegação.
-  - Ficheiro: `src/renderer/views/CalendarView.tsx`
-- [ ] **T6.3** — Shell de `WeeklyPlanningView.tsx`: layout 2 colunas, header (navegação ←/→/"Esta semana", toggle 5/7, botão "Distribuir automaticamente"), `Promise.all` de read+gcal para a semana, `watch-dates` no mount/unmount. **Critério**: 7 colunas vazias renderizam; navegação muda data; toggle alterna 5/7.
-  - Ficheiro: `src/renderer/views/WeeklyPlanningView.tsx`
-- [ ] **T6.4** — `WeekDayColumn.tsx`: header (dia+data, badge "hoje"), lista cronológica de blocos (Bloc cor própria, GC sky+ícone), placeholder vazio. **Critério**: dia com 2 blocos + 1 GC mostra 3 entradas ordenadas.
-- [ ] **T6.5** — `PendingTasksPanel.tsx`: header com total, grupos colapsáveis a partir de `getPendingByBlock`, item com idade ("3d") e estimativa. **Critério**: backlog de 5 tasks em 2 blocos mostra 2 grupos com counts; collapse/expand persiste durante a sessão.
-- [ ] **T6.6** — DnD HTML5 nativo: `draggable` no item de pending, `onDragStart` set no `weeklyPlanningUiStore`, `onDragOver`/`onDrop` em `WeekDayColumn`, dispara `taskStore.createTaskRef`. **Critério**: drag → drop num dia → ref aparece imediatamente; MD updated.
-- [ ] **T6.7** — Quick action "+ Bloco" no rodapé de `WeekDayColumn`: mini-modal (título, hora início, duração default 60min, cor). Cria via `timeBlockStore.addBlock`. **Critério**: bloco aparece e MD updated.
-- [ ] **T6.8** — Quick action "+ Tarefa": se o dia tem 1 bloco, adiciona à key desse bloco; se >1, abre selector; se 0, cria na key do dia. Usa `taskStore.addTask`. **Critério**: tarefa criada e MD updated.
-- [ ] **T6.9** — `AutoDistributeModal.tsx`: ao abrir, calcula plano localmente (mesma lib `@shared/distribute`) **OU** chama tool MCP `distribute_tasks_for_week` com `dry_run: true` (decidir em T6.9 — usar `@shared` directo é mais simples). Mostra preview com score por linha. "Aplicar" chama `taskStore.distributeTasks`. **Critério**: preview consistente; aplicar resulta em refs visíveis; toast com "Desfazer" funciona.
-- [ ] **T6.10** — Estados UX: skeleton de 7 colunas no loading; card "Sem pendentes" no painel vazio; banner discreto em erro GC; sem GC ligado, nem mostra banner. **Critério**: cada estado reproduzível em dev.
+- [x] **T6.1** — Rota `/week/:weekStart?` em `src/renderer/App.tsx` (duas `<Route>`: `/week` e `/week/:weekStart`). Lazy-load via `React.lazy` + `Suspense fallback={null}`.
+- [x] **T6.2** — Botão `CalendarDays` na toolbar do `CalendarView.tsx`, tooltip `"Planeamento semanal (⌘⇧W)"`. Atalho registado num `useEffect` dentro de `NavigationListener` (componente Router-aware) — sem conflitos com ⌘⇧D / ⌘⇧S.
+- [x] **T6.3** — Shell de `WeeklyPlanningView.tsx`: header com navegação ←/→/Esta semana, toggle 5/7, botão Distribuir auto, range de datas. Mount carrega via `Promise.all([loadDayFromICloud, syncDate])` por dia + `watchDates` no IPC. URL ↔ store em sync (URL ganha sobre store; store guarda última semana).
+- [x] **T6.4** — `WeekDayColumn.tsx`: header com dia/data + badge "hoje", blocos ordenados por `startTime`, badge `CalendarSync` quando `googleEventId`, refs do dia listados em mini-secção. Placeholder "Sem blocos".
+- [x] **T6.5** — `PendingPanel.tsx` (renomeado para evitar colisão com `components/PendingTasksPanel.tsx` já existente): grupos colapsáveis a partir de `getPendingByBlock`, contador total, idade + estimativa por item, collapse persiste (in-memory store).
+- [x] **T6.6** — DnD HTML5 nativo: pending item tem `draggable`, dispara `startDrag(originDate, taskId)`. Coluna do dia faz `onDragOver` (preventDefault + `dropEffect: copy` + highlight `bg-accent/5`) e `onDrop` chama `createTaskRef`. Skipa same-day drop. `endDrag` limpa o estado.
+- [x] **T6.7** — `QuickBlockModal.tsx`: rodapé do dia com `+ Bloco`. Modal com título, HH:MM, duração (default 60), 7-color picker. `addBlock(date, ...)`.
+- [x] **T6.8** — `+ Tarefa`: input inline; `Enter` decide rota: 0 blocos → key do dia; 1 bloco → `date__block__id`; >1 abre selector overlay com lista de blocos + opção "Sem bloco".
+- [x] **T6.9** — `AutoDistributeModal.tsx`: usa `@shared/distribute` directo (relative path, ver Notas). Calcula `instanceCount` archive-wide e `existingRefsByDay` restringido à semana. Skipa origens dentro da semana. Tabela com tarefa/dia/score. Aplicar → `distributeTasks` + Toast com Desfazer.
+- [x] **T6.10** — Skeleton de N colunas durante loading, card "Sem pendentes" no painel vazio, banner discreto âmbar em erro de GCal (só mostra se ligado), sem banner se GCal desligado.
 
 ---
 
@@ -112,3 +110,9 @@
 - **Paridade**: se algures detectares divergência entre os 2 serializers, **pára** e reconcilia antes de prosseguir.
 - **Scope creep**: se descobrires necessidade fora do plan (ex: novo campo de task), pergunta antes de adicionar.
 - **Build incremental**: após T2 corre tsc; após T3 corre paridade; após T4 corre smoke test MCP; após T5 corre app em dev; após T6 corre golden path.
+
+### T6 — desvio do plano original
+
+- **Alias `@shared/*` partido em build de produção**: o spike de T1.2 só validou tsc + dev hot-reload, não o build via Rollup. Em build, Rollup falha a resolver `@shared/distribute` mesmo com a alias do Vite (`'@shared': resolve('shared')`) e com a forma `find/replacement` regex. A alias parece não estar a ser aplicada na fase de production build do electron-vite. **Workaround aplicado**: imports relativos (`../../../../shared/distribute`) no `AutoDistributeModal.tsx`. A alias fica configurada em `electron-vite.config.ts` para uso futuro / dev mode, mas em produção é safer ir relativo. Adicionado plugin `sharedJsToTs` em `electron-vite.config.ts` para reescrever as importações `.js` internas em `shared/` (necessárias por NodeNext do MCP) para `.ts` que o Vite consome em runtime.
+- **`PendingPanel` em vez de `PendingTasksPanel`**: já existia `src/renderer/components/PendingTasksPanel.tsx` (timeline view, com prop `currentDate`). O componente do planning vive em `src/renderer/components/weekly/PendingPanel.tsx` para evitar colisão. Os outros componentes (WeekDayColumn, AutoDistributeModal, QuickBlockModal) também foram colocados em `weekly/`.
+- **Lazy chunk size**: o `WeeklyPlanningView` é carregado via `React.lazy`; isto fragmenta o bundle do renderer mas mantém o tempo de boot do Calendário rápido. `Suspense fallback={null}` (sem spinner global) — o próprio view tem skeleton interno.

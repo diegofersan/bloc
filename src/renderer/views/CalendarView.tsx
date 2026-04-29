@@ -13,7 +13,7 @@ import {
   subMonths
 } from 'date-fns'
 import { pt } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, Settings, Inbox, ListTodo, Radar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings, Inbox, ListTodo, Radar, CalendarDays } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
@@ -117,6 +117,14 @@ export default function CalendarView() {
           className="flex items-center gap-1"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
+          <button
+            onClick={() => navigate('/week')}
+            aria-label="Planeamento semanal"
+            title="Planeamento semanal (⌘⇧W)"
+            className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
+          >
+            <CalendarDays size={16} />
+          </button>
           <button
             onClick={() => navigate('/inbox?tab=tasks')}
             aria-label="Todas as tarefas"
