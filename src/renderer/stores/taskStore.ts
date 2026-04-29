@@ -28,6 +28,12 @@ export interface TaskRef {
   id: string
   originDate: string      // date key onde a tarefa original vive
   originTaskId: string    // UUID da tarefa original
+  /**
+   * Snapshot of the origin task's text at ref-creation time. Persisted in MD
+   * so the ref can show a label even if the origin day file is not yet
+   * loaded into memory. Refreshed on subsequent saves.
+   */
+  titleSnapshot?: string
   addedAt: number         // timestamp quando a referência foi criada
 }
 
@@ -52,11 +58,42 @@ interface DeletedTask {
   movedTaskId?: string
 }
 
+/** A pending task hit, grouped by its parent block (or "no block"). */
+export interface PendingHit {
+  task: Task
+  /** Date key where the origin task lives. May be a `date__block__id` key for tasks under a block. */
+  storeKey: string
+  /** YYYY-MM-DD origin date — for `date__block__id` keys this is the prefix. */
+  originDate: string
+  /** blockId if storeKey is `date__block__id`, else null. */
+  blockId: string | null
+}
+
+/** Group of pending tasks under a single block (or unbranched). */
+export interface PendingGroup {
+  blockId: string | null
+  /** Display title — block title or "Sem bloco". */
+  title: string
+  items: PendingHit[]
+}
+
+/** Result of a distributeTasks call — the set of refs actually created. */
+export interface DistributionResult {
+  applied: {
+    targetDate: string
+    refId: string
+    originDate: string
+    originTaskId: string
+  }[]
+}
+
 interface TaskState {
   tasks: Record<string, Task[]>
   taskRefs: Record<string, TaskRef[]>
   distractions: Record<string, Distraction[]>
   lastDeleted: DeletedTask | null
+  /** Last distribution applied, kept in memory for undo. */
+  lastDistribution: DistributionResult | null
   addTask: (date: string, text: string) => void
   toggleTask: (date: string, taskId: string) => void
   removeTask: (date: string, taskId: string) => void
@@ -87,6 +124,17 @@ interface TaskState {
   toggleTaskRef: (refDate: string, refId: string) => void
   removeTaskRef: (refDate: string, refId: string) => void
   getResolvedTask: (ref: TaskRef) => Task | null
+  /** Pending tasks across the archive, grouped by their parent block. */
+  getPendingByBlock: () => PendingGroup[]
+  /**
+   * Apply a list of (originDate, taskId, targetDate) assignments in bulk.
+   * Skips duplicates per dedupKey. Returns a snapshot for undo.
+   */
+  distributeTasks: (
+    plan: { originDate: string; taskId: string; targetDate: string }[]
+  ) => DistributionResult
+  /** Reverts the last distributeTasks call. No-op if no distribution is staged. */
+  undoLastDistribution: () => void
   unindentTask: (date: string, subtaskId: string) => boolean
   getPendingTasksAcrossDates: () => Array<{ task: Task; date: string }>
   updateTaskEstimate: (date: string, taskId: string, minutes: number | undefined) => void
@@ -279,6 +327,7 @@ export const useTaskStore = create<TaskState>()(
       taskRefs: {},
       distractions: {},
       lastDeleted: null,
+      lastDistribution: null,
 
       addTask: (date, text) => {
         const newTask: Task = {
@@ -740,11 +789,18 @@ export const useTaskStore = create<TaskState>()(
         const task = findTaskInList(dateTasks, taskId)
         if (!task) return
 
+        // Skip duplicates so the same (origin, task) → target combo is idempotent.
+        const existing = (state.taskRefs[targetDate] ?? []).find(
+          (r) => r.originDate === originDate && r.originTaskId === taskId
+        )
+        if (existing) return
+
         const refId = crypto.randomUUID()
         const ref: TaskRef = {
           id: refId,
           originDate,
           originTaskId: taskId,
+          titleSnapshot: task.text,
           addedAt: Date.now()
         }
 
@@ -827,6 +883,117 @@ export const useTaskStore = create<TaskState>()(
         const originTasks = get().tasks[ref.originDate]
         if (!originTasks) return null
         return findTaskInList(originTasks, ref.originTaskId)
+      },
+
+      getPendingByBlock: () => {
+        const state = get()
+        const groupsByKey = new Map<string | null, PendingHit[]>()
+
+        function collectFromList(list: Task[], hitFactory: (t: Task) => PendingHit): void {
+          for (const t of list) {
+            if (!t.completed) {
+              const groupKey = hitFactory(t).blockId
+              const arr = groupsByKey.get(groupKey) ?? []
+              arr.push(hitFactory(t))
+              groupsByKey.set(groupKey, arr)
+            }
+            if (t.subtasks.length > 0) {
+              collectFromList(t.subtasks, hitFactory)
+            }
+          }
+        }
+
+        for (const [storeKey, taskList] of Object.entries(state.tasks)) {
+          if (storeKey === BACKLOG_KEY) continue
+          if (storeKey.includes('__block__')) {
+            const [originDate, blockId] = storeKey.split('__block__')
+            collectFromList(taskList, (t) => ({ task: t, storeKey, originDate, blockId }))
+          } else {
+            const originDate = storeKey
+            collectFromList(taskList, (t) => ({ task: t, storeKey, originDate, blockId: null }))
+          }
+        }
+
+        // Stable, sensible group order: "Sem bloco" last, blocks alphabetical by id
+        // (UI re-sorts by resolved title — id ordering is just deterministic).
+        return [...groupsByKey.entries()]
+          .sort(([a], [b]) => {
+            if (a === null) return 1
+            if (b === null) return -1
+            return a.localeCompare(b)
+          })
+          .map(([blockId, items]) => ({
+            blockId,
+            title: blockId ?? 'Sem bloco',
+            items
+          }))
+      },
+
+      distributeTasks: (plan) => {
+        const applied: DistributionResult['applied'] = []
+
+        set((state) => {
+          let nextTasks = state.tasks
+          const nextTaskRefs: Record<string, TaskRef[]> = { ...state.taskRefs }
+
+          for (const { originDate, taskId, targetDate } of plan) {
+            if (originDate === targetDate) continue
+            const originTasks = nextTasks[originDate]
+            if (!originTasks) continue
+            const task = findTaskInList(originTasks, taskId)
+            if (!task) continue
+
+            // Skip duplicates — same (origin, taskId) already pointing at targetDate.
+            const targetList = nextTaskRefs[targetDate] ?? []
+            const dup = targetList.find(
+              (r) => r.originDate === originDate && r.originTaskId === taskId
+            )
+            if (dup) continue
+
+            const refId = crypto.randomUUID()
+            const now = Date.now()
+            const ref: TaskRef = {
+              id: refId,
+              originDate,
+              originTaskId: taskId,
+              titleSnapshot: task.text,
+              addedAt: now
+            }
+
+            // Append back-pointer + history on origin task
+            nextTasks = {
+              ...nextTasks,
+              [originDate]: updateTaskInList(nextTasks[originDate], taskId, (t) => ({
+                ...t,
+                references: [...(t.references || []), { date: targetDate, taskId: refId }],
+                instanceHistory: [...(t.instanceHistory || []), { date: targetDate, addedAt: now }]
+              }))
+            }
+
+            nextTaskRefs[targetDate] = [...targetList, ref]
+            applied.push({ targetDate, refId, originDate, originTaskId: taskId })
+          }
+
+          return {
+            tasks: nextTasks,
+            taskRefs: nextTaskRefs,
+            lastDistribution: { applied }
+          }
+        })
+
+        return { applied }
+      },
+
+      undoLastDistribution: () => {
+        const last = get().lastDistribution
+        if (!last || last.applied.length === 0) return
+        // Walk applied refs in reverse and remove each one. Reusing removeTaskRef
+        // keeps origin-task back-pointer cleanup correct in one place.
+        for (let i = last.applied.length - 1; i >= 0; i--) {
+          const a = last.applied[i]
+          get().removeTaskRef(a.targetDate, a.refId)
+        }
+        set({ lastDistribution: null })
       },
 
       getPendingTasksAcrossDates: () => {

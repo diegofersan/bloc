@@ -5,3 +5,6 @@ dist/
 *.log
 .env
 .env.local
+
+# Vendored copy of /shared/ into mcp-server (populated by build).
+mcp-server/src/shared/

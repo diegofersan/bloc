@@ -10,7 +10,11 @@
     "rootDir": ".",
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["DOM", "DOM.Iterable", "ESNext"]
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["shared/*"]
+    }
   },
-  "include": ["src/renderer/**/*"]
+  "include": ["src/renderer/**/*", "shared/**/*"]
 }

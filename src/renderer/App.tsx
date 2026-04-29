@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Play } from 'lucide-react'
@@ -8,6 +8,7 @@ import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import TrashView from './views/TrashView'
 import RadarView from './views/RadarView'
+const WeeklyPlanningView = lazy(() => import('./views/WeeklyPlanningView'))
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
@@ -74,6 +75,18 @@ function NavigationListener() {
       navigate(path)
     })
     return () => cleanup?.()
+  }, [navigate])
+
+  // ⌘⇧W → weekly planning
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
+        e.preventDefault()
+        navigate('/week')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [navigate])
 
   return null
@@ -150,6 +163,22 @@ function AnimatedRoutes() {
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/trash" element={<TrashView />} />
         <Route path="/radar" element={<RadarView />} />
+        <Route
+          path="/week"
+          element={
+            <Suspense fallback={null}>
+              <WeeklyPlanningView />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/week/:weekStart"
+          element={
+            <Suspense fallback={null}>
+              <WeeklyPlanningView />
+            </Suspense>
+          }
+        />
       </Routes>
     </motion.div>
   )

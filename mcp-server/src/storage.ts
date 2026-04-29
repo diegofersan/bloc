@@ -80,3 +80,25 @@ export function emptyDay(date: string): DayFileData {
     blockTasks: {}
   }
 }
+
+/**
+ * Read N consecutive days starting from `weekStartDate` (ISO YYYY-MM-DD).
+ * Missing files come back as `null` in the same slot, so callers can rely on
+ * positional indexing (Mon..Sun).
+ */
+export async function readWeek(
+  weekStartDate: string,
+  days: number = 7
+): Promise<{ date: string; data: DayFileData | null }[]> {
+  const start = new Date(weekStartDate + 'T00:00:00')
+  const dates: string[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    dates.push(iso)
+  }
+  return Promise.all(
+    dates.map(async (date) => ({ date, data: readDay(date) }))
+  )
+}

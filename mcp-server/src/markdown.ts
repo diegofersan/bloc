@@ -37,6 +37,19 @@ export interface TimeBlockData {
   isGoogleReadOnly?: boolean
 }
 
+/**
+ * Cross-day pointer to a task that lives elsewhere. Persisted in the target
+ * day under `## Referências`. Source of truth for completion state remains
+ * the origin task — refs do not carry their own checkbox.
+ */
+export interface TaskRefData {
+  id: string
+  originDate: string
+  originTaskId: string
+  titleSnapshot: string
+  addedAt: number
+}
+
 export interface DayFileData {
   date: string
   pomodoros: number
@@ -45,6 +58,14 @@ export interface DayFileData {
   distractions: DistractionData[]
   timeBlocks?: TimeBlockData[]
   blockTasks?: Record<string, TaskData[]>
+  /** Refs assigned to this day. */
+  refs?: TaskRefData[]
+  /**
+   * Bodies of `## Foo` sections the parser did not recognise. Preserved on
+   * round-trip so a Bloc version unaware of a future section does not silently
+   * drop it. Keys are the heading without the `## ` prefix.
+   */
+  unknownSections?: Record<string, string>
 }
 
 // --- Serialization ---
@@ -84,6 +105,19 @@ function serializeTimeBlock(b: TimeBlockData): string {
   return `- ${b.title} <!--${meta}-->`
 }
 
+function escapeRefTitle(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function unescapeRefTitle(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+}
+
+function serializeRef(r: TaskRefData): string {
+  const meta = `@refId:${r.id} @origin:${r.originDate} @taskId:${r.originTaskId} @added:${r.addedAt}`
+  return `- "${escapeRefTitle(r.titleSnapshot)}" <!--${meta}-->`
+}
+
 export function serialize(data: DayFileData): string {
   const lines: string[] = []
 
@@ -101,6 +135,16 @@ export function serialize(data: DayFileData): string {
     lines.push('')
     for (const task of data.tasks) {
       lines.push(serializeTask(task, 0))
+    }
+    lines.push('')
+  }
+
+  // Refs (cross-day task pointers)
+  if (data.refs && data.refs.length > 0) {
+    lines.push('## Referências')
+    lines.push('')
+    for (const r of data.refs) {
+      lines.push(serializeRef(r))
     }
     lines.push('')
   }
@@ -139,6 +183,20 @@ export function serialize(data: DayFileData): string {
       for (const task of tasks) {
         lines.push(serializeTask(task, 0))
       }
+      lines.push('')
+    }
+  }
+
+  // Unknown sections — preserved verbatim so a future Bloc version's data
+  // does not get silently dropped on round-trip through this parser.
+  if (data.unknownSections) {
+    for (const heading of Object.keys(data.unknownSections)) {
+      const body = data.unknownSections[heading]
+      lines.push(`## ${heading}`)
+      // Body already includes its own leading/trailing whitespace as captured
+      // on parse; trim only trailing newlines to keep `lines.join('\n')` shape.
+      const trimmed = body.replace(/\n+$/, '')
+      if (trimmed.length > 0) lines.push(trimmed)
       lines.push('')
     }
   }
@@ -315,32 +373,79 @@ function parseBlockTaskHeading(line: string): string | null {
   return match[1]
 }
 
+function parseRefLine(line: string): TaskRefData | null {
+  // Title may contain escaped quotes ( \" ) — match non-greedy with escape support.
+  const match = line.match(/^- "((?:[^"\\]|\\.)*)"\s*<!--(.+?)-->/)
+  if (!match) return null
+  const titleSnapshot = unescapeRefTitle(match[1])
+  const meta = parseMetaComment(line)
+  if (!meta.refId || !meta.origin || !meta.taskId) return null
+  return {
+    id: meta.refId,
+    originDate: meta.origin,
+    originTaskId: meta.taskId,
+    titleSnapshot,
+    addedAt: meta.added ? parseInt(meta.added, 10) : Date.now()
+  }
+}
+
+function parseRefsSection(lines: string[]): TaskRefData[] {
+  const refs: TaskRefData[] = []
+  for (const line of lines) {
+    const parsed = parseRefLine(line)
+    if (parsed) refs.push(parsed)
+  }
+  return refs
+}
+
+/** Split a section body string `"Heading\n...rest..."` into heading + body. */
+function splitSection(section: string): { heading: string; body: string } {
+  const newlineIdx = section.indexOf('\n')
+  if (newlineIdx === -1) return { heading: section, body: '' }
+  return {
+    heading: section.slice(0, newlineIdx),
+    body: section.slice(newlineIdx + 1)
+  }
+}
+
 export function deserialize(content: string): DayFileData {
   const { frontmatter, body } = parseFrontmatter(content)
 
   let tasks: TaskData[] = []
   let distractions: DistractionData[] = []
   let timeBlocks: TimeBlockData[] = []
+  let refs: TaskRefData[] = []
   const blockTasks: Record<string, TaskData[]> = {}
+  const unknownSections: Record<string, string> = {}
 
-  // Split body into sections by h2
+  // Split body into sections by h2. The first chunk is content before any
+  // `## ` heading (typically blank); skip it.
   const sections = body.split(/^## /m)
-  for (const section of sections) {
-    if (section.startsWith('Tarefas')) {
-      // Extract only lines before any ### heading
-      const sectionLines = section.split('\n').slice(1)
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i]
+    if (i === 0) continue // pre-section preamble — discarded (matches old behaviour)
+    const { heading, body: sectionBody } = splitSection(section)
+    const trimmedHeading = heading.trim()
+    if (trimmedHeading.length === 0) continue
+
+    if (trimmedHeading === 'Tarefas') {
+      // Tasks section terminates at the first `### ` (block task) heading.
+      const sectionLines = sectionBody.split('\n')
       const taskLines: string[] = []
       for (const line of sectionLines) {
         if (line.startsWith('### ')) break
         taskLines.push(line)
       }
       tasks = parseTasksSection(taskLines)
-    } else if (section.startsWith('Distrações')) {
-      const lines = section.split('\n').slice(1)
-      distractions = parseDistractionsSection(lines)
-    } else if (section.startsWith('Blocos de Tempo')) {
-      const lines = section.split('\n').slice(1)
-      timeBlocks = parseTimeBlocksSection(lines)
+    } else if (trimmedHeading === 'Referências') {
+      refs = parseRefsSection(sectionBody.split('\n'))
+    } else if (trimmedHeading === 'Distrações') {
+      distractions = parseDistractionsSection(sectionBody.split('\n'))
+    } else if (trimmedHeading === 'Blocos de Tempo') {
+      timeBlocks = parseTimeBlocksSection(sectionBody.split('\n'))
+    } else {
+      // Passthrough: keep verbatim so we can re-emit on serialize.
+      unknownSections[trimmedHeading] = sectionBody
     }
   }
 
@@ -364,6 +469,8 @@ export function deserialize(content: string): DayFileData {
     tasks,
     distractions,
     timeBlocks,
-    ...(Object.keys(blockTasks).length > 0 ? { blockTasks } : {})
+    ...(refs.length > 0 ? { refs } : {}),
+    ...(Object.keys(blockTasks).length > 0 ? { blockTasks } : {}),
+    ...(Object.keys(unknownSections).length > 0 ? { unknownSections } : {})
   }
 }
