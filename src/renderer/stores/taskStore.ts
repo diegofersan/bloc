@@ -15,6 +15,8 @@ export interface Task {
   completed: boolean
   completedAt?: number
   completedFromDate?: string
+  wontDo?: boolean
+  wontDoAt?: number
   subtasks: Task[]
   date: string
   createdAt: number
@@ -97,6 +99,7 @@ interface TaskState {
   addTask: (date: string, text: string) => void
   toggleTask: (date: string, taskId: string) => void
   removeTask: (date: string, taskId: string) => void
+  markWontDo: (storeKey: string, taskId: string) => void
   undoDelete: () => void
   addSubtasks: (date: string, taskId: string, subtaskTexts: string[]) => void
   addManualSubtask: (date: string, parentTaskId: string, text?: string) => string
@@ -382,6 +385,25 @@ export const useTaskStore = create<TaskState>()(
           return {
             tasks: newTasks,
             lastDeleted: isNonEmpty ? { task, date, index: Math.max(0, index) } : state.lastDeleted
+          }
+        })
+      },
+
+      markWontDo: (storeKey, taskId) => {
+        set((state) => {
+          const list = state.tasks[storeKey]
+          if (!list) return state
+          const existing = findTaskInList(list, taskId)
+          if (!existing || existing.wontDo) return state
+          return {
+            tasks: {
+              ...state.tasks,
+              [storeKey]: updateTaskInList(list, taskId, (t) => ({
+                ...t,
+                wontDo: true,
+                wontDoAt: Date.now()
+              }))
+            }
           }
         })
       },
@@ -891,7 +913,7 @@ export const useTaskStore = create<TaskState>()(
 
         function collectFromList(list: Task[], hitFactory: (t: Task) => PendingHit): void {
           for (const t of list) {
-            if (!t.completed) {
+            if (!t.completed && !t.wontDo) {
               const groupKey = hitFactory(t).blockId
               const arr = groupsByKey.get(groupKey) ?? []
               arr.push(hitFactory(t))
@@ -1002,7 +1024,7 @@ export const useTaskStore = create<TaskState>()(
         for (const [date, taskList] of Object.entries(tasks)) {
           if (date.includes('__block__')) continue
           for (const task of taskList) {
-            if (!task.completed) {
+            if (!task.completed && !task.wontDo) {
               result.push({ task, date })
             }
           }

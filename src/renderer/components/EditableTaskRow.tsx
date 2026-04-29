@@ -341,8 +341,13 @@ export default function EditableTaskRow({
           onFocus={onFocus}
           onBlur={handleBlur}
           aria-label="Editar tarefa"
+          title={task.wontDo && task.wontDoAt ? `Marcada como não-fazer em ${new Date(task.wontDoAt).toLocaleDateString('pt-PT')}` : undefined}
           className={`task-editor-input flex-1 text-sm bg-transparent border-none outline-none ${
-            task.completed ? 'line-through text-text-muted' : 'text-text-primary'
+            task.completed
+              ? 'line-through text-text-muted'
+              : task.wontDo
+                ? 'line-through text-text-muted/70 italic'
+                : 'text-text-primary'
           }`}
           spellCheck={false}
         />

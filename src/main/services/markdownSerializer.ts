@@ -3,6 +3,8 @@ export interface TaskData {
   text: string
   completed: boolean
   completedAt?: number
+  wontDo?: boolean
+  wontDoAt?: number
   estimatedMinutes?: number
   createdAt: number
   subtasks: TaskData[]
@@ -64,14 +66,43 @@ export interface DayFileData {
   unknownSections?: Record<string, string>
 }
 
+export type ReviewPhase = 1 | 2 | 3 | 4
+export type ReviewStatus = 'draft' | 'sealed'
+export type MigrationDecision = 'next-week' | 'keep' | 'discard'
+
+export interface MigrationDecisionEntry {
+  taskId: string
+  originDate: string
+  titleSnapshot: string
+  decision: MigrationDecision
+}
+
+export interface WeeklyReviewData {
+  week: string          // ISO week id, e.g. "2026-W17"
+  weekStart: string     // YYYY-MM-DD (Monday)
+  weekEnd: string       // YYYY-MM-DD (Sunday)
+  status: ReviewStatus
+  currentPhase: ReviewPhase
+  migrations: MigrationDecisionEntry[]
+  reflectHighlight: string
+  reflectObstacle: string
+  reflectIntention: string
+  createdAt: number
+  updatedAt: number
+  sealedAt?: number
+}
+
 // --- Serialization ---
 
 function serializeTask(task: TaskData, indent: number): string {
   const prefix = '  '.repeat(indent)
-  const checkbox = task.completed ? '[x]' : '[ ]'
+  const checkbox = task.completed ? '[x]' : task.wontDo ? '[-]' : '[ ]'
   let meta = `@id:${task.id} @created:${task.createdAt}`
   if (task.completed && task.completedAt) {
     meta += ` @completed:${task.completedAt}`
+  }
+  if (task.wontDo && task.wontDoAt) {
+    meta += ` @wontDoAt:${task.wontDoAt}`
   }
   if (task.estimatedMinutes) {
     meta += ` @est:${task.estimatedMinutes}`
@@ -254,19 +285,22 @@ function stripMetaComment(text: string): string {
 interface ParsedTaskLine {
   indent: number
   completed: boolean
+  wontDo: boolean
   text: string
   meta: Record<string, string>
 }
 
 function parseTaskLine(line: string): ParsedTaskLine | null {
-  const match = line.match(/^(\s*)- \[(x| )\] (.+)$/)
+  const match = line.match(/^(\s*)- \[(x|-| )\] (.+)$/)
   if (!match) return null
   const indent = match[1].length / 2
-  const completed = match[2] === 'x'
+  const marker = match[2]
+  const completed = marker === 'x'
+  const wontDo = marker === '-'
   const rawText = match[3]
   const meta = parseMetaComment(rawText)
   const text = stripMetaComment(rawText)
-  return { indent, completed, text, meta }
+  return { indent, completed, wontDo, text, meta }
 }
 
 function buildTaskData(parsed: ParsedTaskLine): TaskData {
@@ -275,6 +309,8 @@ function buildTaskData(parsed: ParsedTaskLine): TaskData {
     text: parsed.text,
     completed: parsed.completed,
     completedAt: parsed.meta.completed ? parseInt(parsed.meta.completed, 10) : undefined,
+    wontDo: parsed.wontDo || undefined,
+    wontDoAt: parsed.meta.wontDoAt ? parseInt(parsed.meta.wontDoAt, 10) : undefined,
     estimatedMinutes: parsed.meta.est ? parseInt(parsed.meta.est, 10) : undefined,
     createdAt: parsed.meta.created ? parseInt(parsed.meta.created, 10) : Date.now(),
     subtasks: []
@@ -474,5 +510,192 @@ export function deserialize(content: string): DayFileData {
     ...(refs.length > 0 ? { refs } : {}),
     ...(Object.keys(blockTasks).length > 0 ? { blockTasks } : {}),
     ...(Object.keys(unknownSections).length > 0 ? { unknownSections } : {})
+  }
+}
+
+// --- Weekly Review serialization ---
+
+function escapeSnapshot(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function unescapeSnapshot(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+}
+
+function serializeMigration(m: MigrationDecisionEntry): string {
+  const meta = `@taskId:${m.taskId} @originDate:${m.originDate} @snapshot:"${escapeSnapshot(m.titleSnapshot)}"`
+  return `- ${m.decision} <!--${meta}-->`
+}
+
+export function serializeReview(data: WeeklyReviewData): string {
+  const lines: string[] = []
+
+  lines.push('---')
+  lines.push(`week: ${data.week}`)
+  lines.push(`weekStart: ${data.weekStart}`)
+  lines.push(`weekEnd: ${data.weekEnd}`)
+  lines.push(`status: ${data.status}`)
+  lines.push(`currentPhase: ${data.currentPhase}`)
+  lines.push(`createdAt: ${data.createdAt}`)
+  lines.push(`updatedAt: ${data.updatedAt}`)
+  if (data.sealedAt !== undefined) {
+    lines.push(`sealedAt: ${data.sealedAt}`)
+  }
+  lines.push('---')
+  lines.push('')
+
+  if (data.migrations.length > 0) {
+    lines.push('## Migrate')
+    lines.push('')
+    for (const m of data.migrations) {
+      lines.push(serializeMigration(m))
+    }
+    lines.push('')
+  }
+
+  lines.push('## Reflect')
+  lines.push('')
+  lines.push('### Destaque')
+  lines.push('')
+  if (data.reflectHighlight.length > 0) {
+    lines.push(data.reflectHighlight)
+    lines.push('')
+  }
+  lines.push('### Obstáculo')
+  lines.push('')
+  if (data.reflectObstacle.length > 0) {
+    lines.push(data.reflectObstacle)
+    lines.push('')
+  }
+  lines.push('### Intenção')
+  lines.push('')
+  if (data.reflectIntention.length > 0) {
+    lines.push(data.reflectIntention)
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+interface ReviewFrontmatter {
+  week: string
+  weekStart: string
+  weekEnd: string
+  status: ReviewStatus
+  currentPhase: ReviewPhase
+  createdAt: number
+  updatedAt: number
+  sealedAt?: number
+}
+
+function parseReviewFrontmatter(text: string): { fm: ReviewFrontmatter; body: string } | null {
+  const match = text.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
+  if (!match) return null
+  const yaml = match[1]
+  const body = match[2]
+  const fm: Partial<ReviewFrontmatter> = {}
+  for (const line of yaml.split('\n')) {
+    const colonIdx = line.indexOf(':')
+    if (colonIdx === -1) continue
+    const key = line.slice(0, colonIdx).trim()
+    const value = line.slice(colonIdx + 1).trim()
+    if (key === 'week') fm.week = value
+    else if (key === 'weekStart') fm.weekStart = value
+    else if (key === 'weekEnd') fm.weekEnd = value
+    else if (key === 'status') fm.status = (value === 'sealed' ? 'sealed' : 'draft')
+    else if (key === 'currentPhase') {
+      const n = parseInt(value, 10)
+      fm.currentPhase = (n >= 1 && n <= 4 ? n : 1) as ReviewPhase
+    }
+    else if (key === 'createdAt') fm.createdAt = parseInt(value, 10) || 0
+    else if (key === 'updatedAt') fm.updatedAt = parseInt(value, 10) || 0
+    else if (key === 'sealedAt') fm.sealedAt = parseInt(value, 10) || undefined
+  }
+  if (!fm.week || !fm.weekStart || !fm.weekEnd) return null
+  return {
+    fm: {
+      week: fm.week,
+      weekStart: fm.weekStart,
+      weekEnd: fm.weekEnd,
+      status: fm.status ?? 'draft',
+      currentPhase: fm.currentPhase ?? 1,
+      createdAt: fm.createdAt ?? 0,
+      updatedAt: fm.updatedAt ?? 0,
+      sealedAt: fm.sealedAt
+    },
+    body
+  }
+}
+
+function parseMigrationLine(line: string): MigrationDecisionEntry | null {
+  const match = line.match(/^- (next-week|keep|discard)\s*<!--(.+?)-->/)
+  if (!match) return null
+  const decision = match[1] as MigrationDecision
+  const meta = parseMetaComment(line)
+  if (!meta.taskId || !meta.originDate) return null
+  const snapMatch = match[2].match(/@snapshot:"((?:[^"\\]|\\.)*)"/)
+  const titleSnapshot = snapMatch ? unescapeSnapshot(snapMatch[1]) : ''
+  return {
+    taskId: meta.taskId,
+    originDate: meta.originDate,
+    titleSnapshot,
+    decision
+  }
+}
+
+export function deserializeReview(content: string): WeeklyReviewData | null {
+  const parsed = parseReviewFrontmatter(content)
+  if (!parsed) return null
+  const { fm, body } = parsed
+
+  const migrations: MigrationDecisionEntry[] = []
+  let reflectHighlight = ''
+  let reflectObstacle = ''
+  let reflectIntention = ''
+
+  const sections = body.split(/^## /m)
+  for (let i = 0; i < sections.length; i++) {
+    if (i === 0) continue
+    const section = sections[i]
+    const newlineIdx = section.indexOf('\n')
+    const heading = (newlineIdx === -1 ? section : section.slice(0, newlineIdx)).trim()
+    const sectionBody = newlineIdx === -1 ? '' : section.slice(newlineIdx + 1)
+
+    if (heading === 'Migrate') {
+      for (const line of sectionBody.split('\n')) {
+        const m = parseMigrationLine(line)
+        if (m) migrations.push(m)
+      }
+    } else if (heading === 'Reflect') {
+      const subs = sectionBody.split(/^### /m)
+      for (let j = 0; j < subs.length; j++) {
+        if (j === 0) continue
+        const sub = subs[j]
+        const subNewline = sub.indexOf('\n')
+        const subHeading = (subNewline === -1 ? sub : sub.slice(0, subNewline)).trim()
+        const subBody = (subNewline === -1 ? '' : sub.slice(subNewline + 1))
+          .replace(/^\n+/, '')
+          .replace(/\n+$/, '')
+        if (subHeading === 'Destaque') reflectHighlight = subBody
+        else if (subHeading === 'Obstáculo') reflectObstacle = subBody
+        else if (subHeading === 'Intenção') reflectIntention = subBody
+      }
+    }
+  }
+
+  return {
+    week: fm.week,
+    weekStart: fm.weekStart,
+    weekEnd: fm.weekEnd,
+    status: fm.status,
+    currentPhase: fm.currentPhase,
+    migrations,
+    reflectHighlight,
+    reflectObstacle,
+    reflectIntention,
+    createdAt: fm.createdAt,
+    updatedAt: fm.updatedAt,
+    ...(fm.sealedAt !== undefined ? { sealedAt: fm.sealedAt } : {})
   }
 }

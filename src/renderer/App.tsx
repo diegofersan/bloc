@@ -8,7 +8,7 @@ import InboxView from './views/InboxView'
 import SettingsView from './views/SettingsView'
 import TrashView from './views/TrashView'
 import RadarView from './views/RadarView'
-const WeeklyPlanningView = lazy(() => import('./views/WeeklyPlanningView'))
+const ReviewView = lazy(() => import('./components/review/ReviewView'))
 import QuickCaptureOverlay from './components/QuickCaptureOverlay'
 import DailyStandupModal from './components/DailyStandupModal'
 import Toast from './components/Toast'
@@ -45,6 +45,9 @@ declare global {
         listDays: () => Promise<string[]>
         watchDates: (dates: string[]) => Promise<boolean>
         stopWatching: () => Promise<boolean>
+        readReview: (week: string) => Promise<unknown>
+        writeReview: (data: unknown) => Promise<boolean>
+        listReviews: () => Promise<string[]>
         onFileChanged: (callback: (data: unknown) => void) => () => void
       }
       siteBlocker: {
@@ -77,12 +80,12 @@ function NavigationListener() {
     return () => cleanup?.()
   }, [navigate])
 
-  // ⌘⇧W → weekly planning
+  // ⌘⇧W → weekly review
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'w') {
         e.preventDefault()
-        navigate('/week')
+        navigate('/review')
       }
     }
     window.addEventListener('keydown', onKey)
@@ -164,18 +167,18 @@ function AnimatedRoutes() {
         <Route path="/trash" element={<TrashView />} />
         <Route path="/radar" element={<RadarView />} />
         <Route
-          path="/week"
+          path="/review"
           element={
             <Suspense fallback={null}>
-              <WeeklyPlanningView />
+              <ReviewView />
             </Suspense>
           }
         />
         <Route
-          path="/week/:weekStart"
+          path="/review/:week"
           element={
             <Suspense fallback={null}>
-              <WeeklyPlanningView />
+              <ReviewView />
             </Suspense>
           }
         />

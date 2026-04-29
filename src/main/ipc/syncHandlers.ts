@@ -4,10 +4,18 @@ import {
   readDayFile,
   writeDayFile,
   listDayFiles,
-  getFileMtime
+  getFileMtime,
+  readReviewFile,
+  writeReviewFile,
+  listReviewFiles
 } from '../services/icloud'
-import { serialize, deserialize } from '../services/markdownSerializer'
-import type { DayFileData } from '../services/markdownSerializer'
+import {
+  serialize,
+  deserialize,
+  serializeReview,
+  deserializeReview
+} from '../services/markdownSerializer'
+import type { DayFileData, WeeklyReviewData } from '../services/markdownSerializer'
 
 let pollingInterval: ReturnType<typeof setInterval> | null = null
 let watchedDates: string[] = []
@@ -107,5 +115,21 @@ export function registerSyncHandlers(): void {
     watchedDates = []
     lastKnownMtimes.clear()
     return true
+  })
+
+  ipcMain.handle('icloud:read-review', (_event, week: string) => {
+    const content = readReviewFile(week)
+    if (!content) return null
+    return deserializeReview(content)
+  })
+
+  ipcMain.handle('icloud:write-review', (_event, data: WeeklyReviewData) => {
+    const content = serializeReview(data)
+    writeReviewFile(data.week, content)
+    return true
+  })
+
+  ipcMain.handle('icloud:list-reviews', () => {
+    return listReviewFiles()
   })
 }
