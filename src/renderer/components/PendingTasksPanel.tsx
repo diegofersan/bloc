@@ -18,6 +18,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
   const createTaskRef = useTaskStore((s) => s.createTaskRef)
   const removeTask = useTaskStore((s) => s.removeTask)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
+  const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
 
   const normalizedProject = projectTitle?.trim().toLowerCase()
 
@@ -26,19 +27,28 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
     const backlog: typeof result = []
 
     for (const [dateKey, taskList] of Object.entries(tasks)) {
-      const blockMatch = dateKey.match(/^(.+)__block__(.+)$/)
+      const isUntimedBlock = dateKey.startsWith('__block__')
+      const blockMatch = !isUntimedBlock ? dateKey.match(/^(.+)__block__(.+)$/) : null
       const baseDate = blockMatch ? blockMatch[1] : dateKey
-      if (baseDate === currentDate) continue
+      if (!isUntimedBlock && baseDate === currentDate) continue
       const isBacklog = dateKey === BACKLOG_KEY
 
       // When filtering by project, only include block-scoped tasks with matching title
       if (normalizedProject) {
-        if (!blockMatch) continue // skip day-level tasks
-        if (isBacklog) continue
-        const blockId = blockMatch[2]
-        const dateBlocks = allBlocks[baseDate] || []
-        const block = dateBlocks.find((b) => b.id === blockId)
-        if (!block || block.title.trim().toLowerCase() !== normalizedProject) continue
+        if (isUntimedBlock) {
+          const untimedId = dateKey.slice('__block__'.length)
+          const ub = untimedBlocks.find((b) => b.id === untimedId)
+          if (!ub || ub.title.trim().toLowerCase() !== normalizedProject) continue
+        } else {
+          if (!blockMatch) continue // skip day-level tasks
+          if (isBacklog) continue
+          const blockId = blockMatch[2]
+          const dateBlocks = allBlocks[baseDate] || []
+          const block = dateBlocks.find((b) => b.id === blockId)
+          if (!block || block.title.trim().toLowerCase() !== normalizedProject) continue
+        }
+      } else if (isUntimedBlock) {
+        // No project filter: surface untimed-block tasks under "Sem data"
       }
 
       for (const task of taskList) {
@@ -52,7 +62,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
             date: dateKey,
             displayDate: baseDate
           }
-          if (isBacklog) {
+          if (isBacklog || isUntimedBlock) {
             backlog.push(entry)
           } else {
             result.push(entry)
@@ -92,7 +102,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
       backlogItems: searchedBacklog,
       grouped: Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
     }
-  }, [tasks, taskRefs, currentDate, search, normalizedProject, allBlocks])
+  }, [tasks, taskRefs, currentDate, search, normalizedProject, allBlocks, untimedBlocks])
 
   const isEmpty = grouped.length === 0 && backlogItems.length === 0
 

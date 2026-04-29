@@ -48,7 +48,10 @@ declare global {
         readReview: (week: string) => Promise<unknown>
         writeReview: (data: unknown) => Promise<boolean>
         listReviews: () => Promise<string[]>
+        readBlocks: () => Promise<unknown>
+        writeBlocks: (data: unknown) => Promise<boolean>
         onFileChanged: (callback: (data: unknown) => void) => () => void
+        onBlocksFileChanged: (callback: (data: unknown) => void) => () => void
       }
       siteBlocker: {
         enable: (sites: string[]) => Promise<boolean>

@@ -44,6 +44,27 @@ export interface TimeBlockData {
   updatedAt: number
   googleEventId?: string
   isGoogleReadOnly?: boolean
+  /** True for blocks without a calendar instance (project-mode). */
+  untimed?: boolean
+}
+
+/**
+ * Untimed block stored at iCloud root in `blocks.md`. Has no date/start/end —
+ * acts as a project container for tasks. Tasks live under storeKey
+ * `__block__<id>` (no date prefix).
+ */
+export interface UntimedBlockData {
+  id: string
+  title: string
+  color: TimeBlockColor
+  createdAt: number
+  updatedAt: number
+}
+
+export interface BlocksFileData {
+  untimedBlocks: UntimedBlockData[]
+  /** Keys are storeKeys of the form `__block__<blockId>`. */
+  tasks: Record<string, TaskData[]>
 }
 
 /**

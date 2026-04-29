@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { useClipboardStore } from './clipboardStore'
+import { useTimeBlockStore, type TimeBlockColor } from './timeBlockStore'
 
 export const BACKLOG_KEY = '__backlog__'
 
@@ -79,6 +80,29 @@ export interface PendingGroup {
   items: PendingHit[]
 }
 
+/** A task hit grouped under a block title. */
+export interface TaskHit {
+  task: Task
+  storeKey: string
+  /** YYYY-MM-DD when the task lives in a dated key, else null. */
+  date: string | null
+  /** UUID of the block instance (dated or untimed) the task belongs to, or null for "Sem bloco". */
+  blockInstanceId: string | null
+}
+
+/** Group of tasks sharing a block title (cross-date). */
+export interface BlockGroup {
+  /** Stable key for the group: title (lowercased trimmed) or null for "Sem bloco". */
+  blockId: string | null
+  title: string
+  color: TimeBlockColor | null
+  /** True when only an untimed instance exists (no dated calendar instance). */
+  isUntimed: boolean
+  /** True when both untimed and dated instances coexist. */
+  isMixed: boolean
+  items: TaskHit[]
+}
+
 /** Result of a distributeTasks call — the set of refs actually created. */
 export interface DistributionResult {
   applied: {
@@ -129,6 +153,8 @@ interface TaskState {
   getResolvedTask: (ref: TaskRef) => Task | null
   /** Pending tasks across the archive, grouped by their parent block. */
   getPendingByBlock: () => PendingGroup[]
+  /** All tasks grouped by block title (cross-date). Untimed blocks without tasks still appear. */
+  getTasksGroupedByBlockTitle: () => BlockGroup[]
   /**
    * Apply a list of (originDate, taskId, targetDate) assignments in bulk.
    * Skips duplicates per dedupKey. Returns a snapshot for undo.
@@ -949,6 +975,135 @@ export const useTaskStore = create<TaskState>()(
             title: blockId ?? 'Sem bloco',
             items
           }))
+      },
+
+      getTasksGroupedByBlockTitle: () => {
+        const state = get()
+        const tbState = useTimeBlockStore.getState()
+
+        type Acc = {
+          color: TimeBlockColor | null
+          hasDated: boolean
+          hasUntimed: boolean
+          firstSeen: number
+          items: TaskHit[]
+        }
+        const groups = new Map<string | null, Acc>()
+        const ensure = (key: string | null): Acc => {
+          let g = groups.get(key)
+          if (!g) {
+            g = { color: null, hasDated: false, hasUntimed: false, firstSeen: Number.POSITIVE_INFINITY, items: [] }
+            groups.set(key, g)
+          }
+          return g
+        }
+
+        const titleKey = (s: string) => s.trim().toLowerCase()
+        const collect = (list: Task[], hit: (t: Task) => TaskHit, groupKey: string | null) => {
+          for (const t of list) {
+            ensure(groupKey).items.push(hit(t))
+            if (t.subtasks.length > 0) collect(t.subtasks, hit, groupKey)
+          }
+        }
+
+        for (const [storeKey, taskList] of Object.entries(state.tasks)) {
+          if (storeKey === BACKLOG_KEY) {
+            collect(taskList, (t) => ({ task: t, storeKey, date: null, blockInstanceId: null }), null)
+            continue
+          }
+
+          if (storeKey.startsWith('__block__')) {
+            const blockId = storeKey.slice('__block__'.length)
+            const ub = tbState.untimedBlocks.find((b) => b.id === blockId)
+            if (!ub) {
+              collect(taskList, (t) => ({ task: t, storeKey, date: null, blockInstanceId: blockId }), null)
+              continue
+            }
+            const key = titleKey(ub.title)
+            const g = ensure(key)
+            g.hasUntimed = true
+            if (ub.createdAt < g.firstSeen) {
+              g.firstSeen = ub.createdAt
+              g.color = ub.color
+            }
+            collect(taskList, (t) => ({ task: t, storeKey, date: null, blockInstanceId: blockId }), key)
+            continue
+          }
+
+          if (storeKey.includes('__block__')) {
+            const [date, blockId] = storeKey.split('__block__')
+            const tb = tbState.getBlockById(blockId)
+            if (!tb) {
+              collect(taskList, (t) => ({ task: t, storeKey, date, blockInstanceId: blockId }), null)
+              continue
+            }
+            const key = titleKey(tb.title)
+            const g = ensure(key)
+            g.hasDated = true
+            const seen = tb.createdAt
+            if (seen < g.firstSeen) {
+              g.firstSeen = seen
+              g.color = tb.color
+            }
+            collect(taskList, (t) => ({ task: t, storeKey, date, blockInstanceId: blockId }), key)
+            continue
+          }
+
+          // plain YYYY-MM-DD → "Sem bloco"
+          collect(taskList, (t) => ({ task: t, storeKey, date: storeKey, blockInstanceId: null }), null)
+        }
+
+        // Ensure every untimed block surfaces, even if it has no tasks yet.
+        for (const ub of tbState.untimedBlocks) {
+          const key = titleKey(ub.title)
+          const g = ensure(key)
+          g.hasUntimed = true
+          if (ub.createdAt < g.firstSeen) {
+            g.firstSeen = ub.createdAt
+            g.color = ub.color
+          }
+        }
+
+        const titleByKey = new Map<string | null, string>()
+        // Pick a display title per group: prefer untimed block's exact-case title,
+        // otherwise first dated block's title, otherwise the lowercased key.
+        for (const [key] of groups) {
+          if (key === null) {
+            titleByKey.set(null, 'Sem bloco')
+            continue
+          }
+          const ub = tbState.untimedBlocks.find((b) => titleKey(b.title) === key)
+          if (ub) {
+            titleByKey.set(key, ub.title.trim())
+            continue
+          }
+          let pick: string | null = null
+          let pickAt = Number.POSITIVE_INFINITY
+          for (const dateBlocks of Object.values(tbState.blocks)) {
+            for (const b of dateBlocks) {
+              if (titleKey(b.title) === key && b.createdAt < pickAt) {
+                pick = b.title.trim()
+                pickAt = b.createdAt
+              }
+            }
+          }
+          titleByKey.set(key, pick ?? key)
+        }
+
+        const result: BlockGroup[] = [...groups.entries()].map(([key, g]) => ({
+          blockId: key,
+          title: titleByKey.get(key) ?? 'Sem bloco',
+          color: g.color,
+          isUntimed: g.hasUntimed && !g.hasDated,
+          isMixed: g.hasUntimed && g.hasDated,
+          items: g.items
+        }))
+
+        return result.sort((a, b) => {
+          if (a.blockId === null) return 1
+          if (b.blockId === null) return -1
+          return a.title.toLowerCase().localeCompare(b.title.toLowerCase())
+        })
       },
 
       distributeTasks: (plan) => {

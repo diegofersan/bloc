@@ -1,6 +1,6 @@
 import { useTaskStore } from '../stores/taskStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
-import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
+import { useTimeBlockStore, type TimeBlock, type UntimedBlock, type TimeBlockColor } from '../stores/timeBlockStore'
 import type { Task, TaskRef, Distraction } from '../stores/taskStore'
 
 interface TaskData {
@@ -52,12 +52,28 @@ interface DayFileData {
   blockTasks?: Record<string, TaskData[]>
 }
 
+interface UntimedBlockData {
+  id: string
+  title: string
+  color: TimeBlockColor
+  createdAt: number
+  updatedAt: number
+}
+
+interface BlocksFileData {
+  untimedBlocks: UntimedBlockData[]
+  tasks: Record<string, TaskData[]>
+}
+
 const SYNC_MIGRATED_KEY = 'bloc-icloud-migrated'
 let unsubscribeTasks: (() => void) | null = null
 let unsubscribePomodoro: (() => void) | null = null
 let unsubscribeTimeBlocks: (() => void) | null = null
+let unsubscribeUntimedBlocks: (() => void) | null = null
 let cleanupFileChanged: (() => void) | null = null
+let cleanupBlocksFileChanged: (() => void) | null = null
 let debounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
+let blocksDebounceTimer: ReturnType<typeof setTimeout> | null = null
 let icloudAvailable = false
 let applyingExternal = false // suppress write-back while applying external changes
 
@@ -301,6 +317,86 @@ function applyExternalChange(data: DayFileData): void {
   }
 }
 
+// --- Blocks file (untimed projects) ---
+
+function untimedBlockToData(b: UntimedBlock): UntimedBlockData {
+  return {
+    id: b.id,
+    title: b.title,
+    color: b.color,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt
+  }
+}
+
+function dataToUntimedBlock(d: UntimedBlockData): UntimedBlock {
+  return {
+    id: d.id,
+    title: d.title,
+    color: d.color,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt
+  }
+}
+
+function buildBlocksFileData(): BlocksFileData {
+  const untimedBlocks = useTimeBlockStore.getState().untimedBlocks
+  const allTasks = useTaskStore.getState().tasks
+  const tasks: Record<string, TaskData[]> = {}
+  for (const key of Object.keys(allTasks)) {
+    if (key.startsWith('__block__')) {
+      const blockId = key.slice('__block__'.length)
+      tasks[blockId] = allTasks[key].map(taskToData)
+    }
+  }
+  return {
+    untimedBlocks: untimedBlocks.map(untimedBlockToData),
+    tasks
+  }
+}
+
+function writeBlocksToICloud(): void {
+  if (!icloudAvailable) return
+  const data = buildBlocksFileData()
+  window.bloc?.icloud.writeBlocks(data)
+}
+
+function debouncedWriteBlocks(): void {
+  if (applyingExternal) return
+  if (blocksDebounceTimer) clearTimeout(blocksDebounceTimer)
+  blocksDebounceTimer = setTimeout(() => {
+    blocksDebounceTimer = null
+    writeBlocksToICloud()
+  }, 500)
+}
+
+function applyExternalBlocksChange(data: BlocksFileData): void {
+  applyingExternal = true
+  try {
+    useTimeBlockStore.setState({
+      untimedBlocks: data.untimedBlocks.map(dataToUntimedBlock)
+    })
+    const currentTasks = useTaskStore.getState().tasks
+    const updated = { ...currentTasks }
+    for (const key of Object.keys(updated)) {
+      if (key.startsWith('__block__')) delete updated[key]
+    }
+    for (const [blockId, tasks] of Object.entries(data.tasks)) {
+      const key = `__block__${blockId}`
+      updated[key] = tasks.map((t) => dataToTask(t, ''))
+    }
+    useTaskStore.setState({ tasks: updated })
+  } finally {
+    applyingExternal = false
+  }
+}
+
+async function loadBlocksFromICloud(): Promise<void> {
+  const data = (await window.bloc?.icloud.readBlocks()) as BlocksFileData | null | undefined
+  if (!data) return
+  applyExternalBlocksChange(data)
+}
+
 // --- Migration ---
 
 async function migrateLocalStorageToICloud(): Promise<void> {
@@ -408,8 +504,13 @@ function subscribeToStoreChanges(): void {
     prevTaskRefs = state.taskRefs
 
     const allChanged = new Set([...changedTaskDates, ...changedDistractionDates, ...changedRefDates])
+    let blocksFileNeedsWrite = false
     for (const date of allChanged) {
       if (date === '__backlog__') continue // backlog task keys are local-only
+      if (date.startsWith('__block__')) {
+        blocksFileNeedsWrite = true
+        continue
+      }
       if (date.includes('__block__')) {
         // Block task key changed — trigger write for the parent date
         const parentDate = date.split('__block__')[0]
@@ -418,6 +519,7 @@ function subscribeToStoreChanges(): void {
       }
       debouncedWrite(date)
     }
+    if (blocksFileNeedsWrite) debouncedWriteBlocks()
   })
 
   let prevPomodoros = usePomodoroStore.getState().completedPomodoros
@@ -447,6 +549,14 @@ function subscribeToStoreChanges(): void {
       debouncedWrite(date)
     }
   })
+
+  let prevUntimed = useTimeBlockStore.getState().untimedBlocks
+  unsubscribeUntimedBlocks = useTimeBlockStore.subscribe((state) => {
+    if (state.untimedBlocks !== prevUntimed) {
+      prevUntimed = state.untimedBlocks
+      debouncedWriteBlocks()
+    }
+  })
 }
 
 // --- Public API ---
@@ -473,10 +583,17 @@ export async function initSync(): Promise<void> {
     console.log('[sync] Load complete')
   }
 
+  await loadBlocksFromICloud()
+
   // Listen for external file changes from main process
   cleanupFileChanged = window.bloc?.icloud.onFileChanged((data: DayFileData) => {
     console.log('[sync] External change detected for', data.date)
     applyExternalChange(data)
+  }) ?? null
+
+  cleanupBlocksFileChanged = window.bloc?.icloud.onBlocksFileChanged((data: BlocksFileData) => {
+    console.log('[sync] External blocks.md change detected')
+    applyExternalBlocksChange(data)
   }) ?? null
 
   subscribeToStoreChanges()
@@ -510,14 +627,22 @@ export function cleanup(): void {
   unsubscribeTasks?.()
   unsubscribePomodoro?.()
   unsubscribeTimeBlocks?.()
+  unsubscribeUntimedBlocks?.()
   cleanupFileChanged?.()
+  cleanupBlocksFileChanged?.()
   unsubscribeTasks = null
   unsubscribePomodoro = null
   unsubscribeTimeBlocks = null
+  unsubscribeUntimedBlocks = null
   cleanupFileChanged = null
+  cleanupBlocksFileChanged = null
   for (const timer of debounceTimers.values()) {
     clearTimeout(timer)
   }
   debounceTimers.clear()
+  if (blocksDebounceTimer) {
+    clearTimeout(blocksDebounceTimer)
+    blocksDebounceTimer = null
+  }
   window.bloc?.icloud.stopWatching()
 }
