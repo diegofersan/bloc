@@ -265,7 +265,11 @@ export default function WeekDayColumn({ date }: Props) {
         </button>
         <span
           className={`flex-1 truncate ${
-            t.completed ? 'line-through text-text-muted' : 'text-text-primary'
+            t.completed
+              ? 'line-through text-text-muted'
+              : t.wontDo
+                ? 'line-through text-text-muted/70 italic'
+                : 'text-text-primary'
           }`}
         >
           {t.text}

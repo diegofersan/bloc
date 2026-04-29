@@ -118,9 +118,9 @@ export default function CalendarView() {
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           <button
-            onClick={() => navigate('/week')}
-            aria-label="Planeamento semanal"
-            title="Planeamento semanal (⌘⇧W)"
+            onClick={() => navigate('/review')}
+            aria-label="Revisão semanal"
+            title="Revisão semanal (⌘⇧W)"
             className="rounded-lg p-2 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
           >
             <CalendarDays size={16} />

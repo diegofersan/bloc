@@ -28,7 +28,15 @@ interface ToastState {
   action?: { label: string; onClick: () => void }
 }
 
-export default function WeeklyPlanningView() {
+interface WeeklyPlanningViewProps {
+  weekStart?: string
+  embedded?: boolean
+}
+
+export default function WeeklyPlanningView({
+  weekStart: weekStartProp,
+  embedded = false
+}: WeeklyPlanningViewProps = {}) {
   const navigate = useNavigate()
   const { weekStart: paramWeekStart } = useParams<{ weekStart?: string }>()
   const storedWeekStart = useWeeklyPlanningUiStore((s) => s.weekStart)
@@ -44,12 +52,12 @@ export default function WeeklyPlanningView() {
   const [showDistribute, setShowDistribute] = useState(false)
   const [toast, setToast] = useState<ToastState>({ message: '', visible: false })
 
-  // Resolve weekStart: URL param > store > current week's Monday
+  // Resolve weekStart: prop > URL param > store > current week's Monday
   const weekStart = useMemo(() => {
-    const candidate = paramWeekStart ?? storedWeekStart ?? mondayOf(new Date())
+    const candidate = weekStartProp ?? paramWeekStart ?? storedWeekStart ?? mondayOf(new Date())
     // Normalise to Monday in case caller passed a non-Monday date
     return mondayOf(parseISO(candidate))
-  }, [paramWeekStart, storedWeekStart])
+  }, [weekStartProp, paramWeekStart, storedWeekStart])
 
   // Persist URL → store
   useEffect(() => {
@@ -106,17 +114,21 @@ export default function WeeklyPlanningView() {
 
   const handlePrev = useCallback(() => {
     const next = fmt(addDays(parseISO(weekStart), -7))
-    navigate(`/week/${next}`)
-  }, [weekStart, navigate])
+    if (embedded) setWeekStart(next)
+    else navigate(`/week/${next}`)
+  }, [weekStart, navigate, embedded, setWeekStart])
 
   const handleNext = useCallback(() => {
     const next = fmt(addDays(parseISO(weekStart), 7))
-    navigate(`/week/${next}`)
-  }, [weekStart, navigate])
+    if (embedded) setWeekStart(next)
+    else navigate(`/week/${next}`)
+  }, [weekStart, navigate, embedded, setWeekStart])
 
   const handleThisWeek = useCallback(() => {
-    navigate(`/week/${mondayOf(new Date())}`)
-  }, [navigate])
+    const monday = mondayOf(new Date())
+    if (embedded) setWeekStart(monday)
+    else navigate(`/week/${monday}`)
+  }, [navigate, embedded, setWeekStart])
 
   const isCurrentWeek = isSameWeek(parseISO(weekStart), new Date(), { weekStartsOn: 1 })
 
@@ -138,17 +150,19 @@ export default function WeeklyPlanningView() {
   return (
     <div className="flex flex-col h-full bg-bg-primary">
       {/* Titlebar drag area */}
-      <div className="titlebar-drag flex shrink-0 items-end justify-between pb-1 px-6 pt-[50px]">
-        <button
-          onClick={() => navigate('/')}
-          aria-label="Voltar"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
-        >
-          <ArrowLeft size={16} />
-          <span className="text-xs">Calendário</span>
-        </button>
-      </div>
+      {!embedded && (
+        <div className="titlebar-drag flex shrink-0 items-end justify-between pb-1 px-6 pt-[50px]">
+          <button
+            onClick={() => navigate('/')}
+            aria-label="Voltar"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary"
+          >
+            <ArrowLeft size={16} />
+            <span className="text-xs">Calendário</span>
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="shrink-0 px-6 py-3 flex items-center justify-between gap-3 border-b border-border">
