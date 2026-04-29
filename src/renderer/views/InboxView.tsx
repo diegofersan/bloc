@@ -272,6 +272,7 @@ function BlockGroupView({
 }) {
   const addTask = useTaskStore((s) => s.addTask)
   const addUntimedBlock = useTimeBlockStore((s) => s.addUntimedBlock)
+  const removeUntimedBlock = useTimeBlockStore((s) => s.removeUntimedBlock)
   const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const [adding, setAdding] = useState(false)
@@ -336,10 +337,20 @@ function BlockGroupView({
   }
 
   const isSemBloco = group.blockId === null
+  const titleKey = group.title.trim().toLowerCase()
+  const matchingUntimed = useMemo(
+    () => (isSemBloco ? [] : untimedBlocks.filter((b) => b.title.trim().toLowerCase() === titleKey)),
+    [untimedBlocks, titleKey, isSemBloco]
+  )
+  const canDelete = !isSemBloco && group.items.length === 0 && matchingUntimed.length > 0
+
+  function handleDelete() {
+    for (const ub of matchingUntimed) removeUntimedBlock(ub.id)
+  }
 
   return (
     <div className="mb-5">
-      <div className="flex items-center gap-2 mb-2 sticky top-0 bg-bg-primary py-1 z-[1]">
+      <div className="group/header flex items-center gap-2 mb-2 sticky top-0 bg-bg-primary py-1 z-[1]">
         {!isSemBloco && (
           <span
             className={`shrink-0 w-2.5 h-2.5 rounded-full ${COLOR_DOT_CLASS[group.color ?? 'slate'] ?? 'bg-slate-500'}`}
@@ -354,6 +365,15 @@ function BlockGroupView({
         </h3>
         {pendingCount > 0 && (
           <span className="text-[10px] tabular-nums text-text-muted">{pendingCount}</span>
+        )}
+        {canDelete && (
+          <button
+            onClick={handleDelete}
+            aria-label="Eliminar bloco vazio"
+            className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors opacity-0 group-hover/header:opacity-100 focus:opacity-100"
+          >
+            <X size={14} />
+          </button>
         )}
         <button
           onClick={() => setAdding((v) => !v)}
