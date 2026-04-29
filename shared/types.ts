@@ -8,6 +8,8 @@ export interface TaskData {
   text: string
   completed: boolean
   completedAt?: number
+  wontDo?: boolean
+  wontDoAt?: number
   estimatedMinutes?: number
   createdAt: number
   subtasks: TaskData[]

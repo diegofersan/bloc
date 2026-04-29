@@ -664,7 +664,7 @@ interface PendingHit {
 function collectPending(tasks: TaskData[]): TaskData[] {
   const out: TaskData[] = []
   for (const t of tasks) {
-    if (!t.completed) out.push(t)
+    if (!t.completed && !t.wontDo) out.push(t)
     if (t.subtasks.length > 0) out.push(...collectPending(t.subtasks))
   }
   return out

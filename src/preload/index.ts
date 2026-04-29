@@ -48,6 +48,10 @@ if (process.contextIsolated) {
         listDays: () => ipcRenderer.invoke('icloud:list-days'),
         watchDates: (dates: string[]) => ipcRenderer.invoke('icloud:watch-dates', dates),
         stopWatching: () => ipcRenderer.invoke('icloud:stop-watching'),
+        readReview: (week: string) => ipcRenderer.invoke('icloud:read-review', week),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        writeReview: (data: any) => ipcRenderer.invoke('icloud:write-review', data),
+        listReviews: () => ipcRenderer.invoke('icloud:list-reviews'),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onFileChanged: (callback: (data: any) => void) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
