@@ -10,6 +10,7 @@ export interface GoogleCalendarEvent {
   status: string
   updated: string
   colorId?: string
+  visibility?: string
 }
 
 export interface GoogleCalendar {
@@ -85,6 +86,7 @@ export async function createEvent(
     start: { dateTime: string; timeZone?: string }
     end: { dateTime: string; timeZone?: string }
     colorId?: string
+    visibility?: 'private' | 'public' | 'default' | 'confidential'
   }
 ): Promise<GoogleCalendarEvent> {
   const res = await gcalFetch(`/calendars/${encodeURIComponent(calendarId)}/events`, {
@@ -103,6 +105,7 @@ export async function updateEvent(
     start?: { dateTime: string; timeZone?: string }
     end?: { dateTime: string; timeZone?: string }
     colorId?: string
+    visibility?: 'private' | 'public' | 'default' | 'confidential'
   }
 ): Promise<GoogleCalendarEvent> {
   const res = await gcalFetch(

@@ -35,6 +35,7 @@ export interface TimeBlockData {
   updatedAt: number
   googleEventId?: string
   isGoogleReadOnly?: boolean
+  private?: boolean
 }
 
 /**
@@ -102,6 +103,7 @@ function serializeTimeBlock(b: TimeBlockData): string {
   let meta = `@id:${b.id} @start:${b.startTime} @end:${b.endTime} @color:${b.color} @created:${b.createdAt} @updated:${b.updatedAt}`
   if (b.googleEventId) meta += ` @gcalId:${b.googleEventId}`
   if (b.isGoogleReadOnly) meta += ` @gcalReadOnly:true`
+  if (b.private) meta += ` @private:true`
   return `- ${b.title} <!--${meta}-->`
 }
 
@@ -354,7 +356,8 @@ function parseTimeBlockLine(line: string): TimeBlockData | null {
     createdAt: meta.created ? parseInt(meta.created, 10) : Date.now(),
     updatedAt: meta.updated ? parseInt(meta.updated, 10) : Date.now(),
     googleEventId: meta.gcalId,
-    isGoogleReadOnly: meta.gcalReadOnly === 'true'
+    isGoogleReadOnly: meta.gcalReadOnly === 'true',
+    private: meta.private === 'true' ? true : undefined
   }
 }
 

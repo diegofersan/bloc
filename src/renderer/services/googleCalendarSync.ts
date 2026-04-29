@@ -11,6 +11,11 @@ interface GCalEvent {
   end: { dateTime?: string; date?: string }
   status: string
   updated: string
+  visibility?: string
+}
+
+function isPrivateVisibility(v: string | undefined): boolean {
+  return v === 'private' || v === 'confidential'
 }
 
 const SYNC_INTERVAL = 5 * 60 * 1000 // 5 minutes
@@ -62,7 +67,8 @@ function eventToTimeBlock(event: GCalEvent, date: string): TimeBlock | null {
     createdAt: Date.now(),
     updatedAt: new Date(event.updated).getTime(),
     googleEventId: event.id,
-    isGoogleReadOnly: false
+    isGoogleReadOnly: false,
+    private: isPrivateVisibility(event.visibility) ? true : undefined
   }
 }
 
@@ -75,7 +81,8 @@ async function pushLocalBlocksToGcal(date: string, calendarId: string): Promise<
       const result = await window.bloc?.gcal.createEvent(calendarId, {
         summary: block.title,
         start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
+        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+        visibility: block.private ? 'private' : 'default'
       })
 
       if (result?.success && result.event) {
@@ -112,7 +119,8 @@ async function pushUpdatedBlocksToGcal(date: string, calendarId: string): Promis
       await window.bloc?.gcal.updateEvent(calendarId, gcalId, {
         summary: block.title,
         start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
+        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+        visibility: block.private ? 'private' : 'default'
       })
       lastPushedAt.set(gcalId, Date.now())
     } catch (err) {
@@ -197,7 +205,8 @@ async function pullEventsFromGcal(date: string, calendarId: string): Promise<voi
                   startTime: dateTimeToMinutes(event.start.dateTime!),
                   endTime: dateTimeToMinutes(event.end.dateTime!),
                   title: event.summary || b.title,
-                  updatedAt: eventUpdatedAt
+                  updatedAt: eventUpdatedAt,
+                  private: isPrivateVisibility(event.visibility) ? true : undefined
                 }
               : b
           )
@@ -365,7 +374,8 @@ function setupReactivePush(): void {
             await window.bloc?.gcal.updateEvent(calId, googleEventId, {
               summary: block.title,
               start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-              end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE }
+              end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+              visibility: block.private ? 'private' : 'default'
             })
             lastPushedAt.set(googleEventId, Date.now())
           } catch (err) {

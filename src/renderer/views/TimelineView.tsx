@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Play } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Play, Lock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO, addDays, subDays } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -46,7 +46,7 @@ function DetailBlockHeader({
   isNarrow
 }: {
   block: TimeBlock
-  onUpdate: (updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title'>>) => void
+  onUpdate: (updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title' | 'private'>>) => void
   isNarrow: boolean
 }) {
   const [title, setTitle] = useState(block.title)
@@ -128,6 +128,17 @@ function DetailBlockHeader({
             maxLength={5}
           />
         </div>
+        <button
+          type="button"
+          onClick={() => onUpdate({ private: !block.private })}
+          title={block.private ? 'Privado — outros vêem só "Ocupado" no Google Calendar' : 'Público — visível no Google Calendar'}
+          aria-pressed={!!block.private}
+          className={`p-1 rounded hover:bg-black/5 transition-colors ${
+            block.private ? 'text-rose-500' : 'text-text-muted/40'
+          }`}
+        >
+          <Lock size={14} />
+        </button>
       </div>
     </div>
   )
