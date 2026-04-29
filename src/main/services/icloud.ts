@@ -105,3 +105,26 @@ export function listReviewFiles(): string[] {
   }
   return weeks.sort()
 }
+
+// --- Untimed blocks file (~/Bloc/blocks.md) ---
+
+export function getBlocksFilePath(): string {
+  return join(ICLOUD_BASE, 'blocks.md')
+}
+
+export function readBlocksFile(): string | null {
+  const path = getBlocksFilePath()
+  if (!existsSync(path)) return null
+  return readFileSync(path, 'utf-8')
+}
+
+export function writeBlocksFile(content: string): void {
+  mkdirSync(ICLOUD_BASE, { recursive: true })
+  writeFileSync(getBlocksFilePath(), content, 'utf-8')
+}
+
+export function getBlocksFileMtime(): number | null {
+  const path = getBlocksFilePath()
+  if (!existsSync(path)) return null
+  return statSync(path).mtimeMs
+}

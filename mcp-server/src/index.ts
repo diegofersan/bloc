@@ -10,14 +10,17 @@ import {
   writeDay,
   emptyDay,
   readWeek,
-  getBasePath
+  getBasePath,
+  readBlocks,
+  writeBlocks
 } from './storage.js'
 import type {
   TaskData,
   TimeBlockData,
   TimeBlockColor,
   TaskRefData,
-  DayFileData
+  DayFileData,
+  UntimedBlockData
 } from './markdown.js'
 import { dedupKey, makeRefId } from './shared/refs.js'
 import { distribute, type DistributeCandidate } from './shared/distribute.js'
@@ -552,6 +555,85 @@ server.tool(
   }
 )
 
+// create_block (untimed / project)
+server.tool(
+  'create_block',
+  `Create an untimed block (project) — a container for tasks that lives outside the calendar timeline.
+
+Use this when the user wants to organize work as a project (no specific date/time). The block stores a title + color and tasks can be added to it via storeKey __block__<id>. If a calendar block with the same title is later created, both share the same conceptual group in the Tasks view.`,
+  {
+    title: z.string().min(1).describe('Block title — must not be empty'),
+    color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)')
+  },
+  async ({ title, color }) => {
+    const trimmed = title.trim()
+    if (trimmed.length === 0) {
+      return { content: [{ type: 'text', text: 'Block title cannot be empty.' }], isError: true }
+    }
+
+    const data = readBlocks()
+    const now = Date.now()
+    const block: UntimedBlockData = {
+      id: uuidv4(),
+      title: trimmed,
+      color: (color as TimeBlockColor) ?? 'indigo',
+      createdAt: now,
+      updatedAt: now
+    }
+    data.untimedBlocks.push(block)
+    writeBlocks(data)
+    return {
+      content: [{
+        type: 'text',
+        text: `Created untimed block "${block.title}" [${block.color}] (id: ${block.id})`
+      }]
+    }
+  }
+)
+
+// list_blocks
+server.tool(
+  'list_blocks',
+  'List all untimed blocks (projects) stored in blocks.md, with their task counts.',
+  {},
+  async () => {
+    const data = readBlocks()
+    const blocks = data.untimedBlocks.map((b) => {
+      const tasks = data.tasks[`__block__${b.id}`] ?? []
+      const pending = collectPending(tasks).length
+      return {
+        id: b.id,
+        title: b.title,
+        color: b.color,
+        taskCount: tasks.length,
+        pendingCount: pending
+      }
+    })
+    return { content: [{ type: 'text', text: JSON.stringify({ blocks }, null, 2) }] }
+  }
+)
+
+// delete_block
+server.tool(
+  'delete_block',
+  'Delete an untimed block (project) and all its tasks. Only removes blocks from blocks.md — does not affect calendar blocks with matching title.',
+  {
+    id: z.string().describe('Untimed block id')
+  },
+  async ({ id }) => {
+    const data = readBlocks()
+    const idx = data.untimedBlocks.findIndex((b) => b.id === id)
+    if (idx === -1) {
+      return { content: [{ type: 'text', text: `Untimed block ${id} not found` }], isError: true }
+    }
+    const removed = data.untimedBlocks[idx]
+    data.untimedBlocks.splice(idx, 1)
+    delete data.tasks[`__block__${id}`]
+    writeBlocks(data)
+    return { content: [{ type: 'text', text: `Deleted untimed block "${removed.title}" (id: ${id})` }] }
+  }
+)
+
 // get_stats
 server.tool(
   'get_stats',
@@ -692,6 +774,16 @@ function listAllPending(): PendingHit[] {
       }
     }
   }
+
+  // Untimed blocks (blocks.md)
+  const blocks = readBlocks()
+  for (const b of blocks.untimedBlocks) {
+    const tasks = blocks.tasks[`__block__${b.id}`] ?? []
+    for (const t of collectPending(tasks)) {
+      hits.push({ task: t, originDate: '', parentKind: 'block', blockId: b.id, groupTitle: b.title })
+    }
+  }
+
   return hits
 }
 

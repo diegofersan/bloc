@@ -52,6 +52,9 @@ if (process.contextIsolated) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         writeReview: (data: any) => ipcRenderer.invoke('icloud:write-review', data),
         listReviews: () => ipcRenderer.invoke('icloud:list-reviews'),
+        readBlocks: () => ipcRenderer.invoke('icloud:read-blocks'),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        writeBlocks: (data: any) => ipcRenderer.invoke('icloud:write-blocks', data),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         onFileChanged: (callback: (data: any) => void) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +62,15 @@ if (process.contextIsolated) {
           ipcRenderer.on('icloud:file-changed', handler)
           return () => {
             ipcRenderer.removeListener('icloud:file-changed', handler)
+          }
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        onBlocksFileChanged: (callback: (data: any) => void) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const handler = (_event: Electron.IpcRendererEvent, data: any) => callback(data)
+          ipcRenderer.on('icloud:blocks-file-changed', handler)
+          return () => {
+            ipcRenderer.removeListener('icloud:blocks-file-changed', handler)
           }
         }
       },

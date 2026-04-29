@@ -7,19 +7,25 @@ import {
   getFileMtime,
   readReviewFile,
   writeReviewFile,
-  listReviewFiles
+  listReviewFiles,
+  readBlocksFile,
+  writeBlocksFile,
+  getBlocksFileMtime
 } from '../services/icloud'
 import {
   serialize,
   deserialize,
   serializeReview,
-  deserializeReview
+  deserializeReview,
+  serializeBlocksFile,
+  deserializeBlocksFile
 } from '../services/markdownSerializer'
-import type { DayFileData, WeeklyReviewData } from '../services/markdownSerializer'
+import type { DayFileData, WeeklyReviewData, BlocksFileData } from '../services/markdownSerializer'
 
 let pollingInterval: ReturnType<typeof setInterval> | null = null
 let watchedDates: string[] = []
 const lastKnownMtimes: Map<string, number> = new Map()
+let lastBlocksMtime: number | null = null
 
 function stopPolling(): void {
   if (pollingInterval) {
@@ -33,6 +39,10 @@ function startPolling(): void {
   if (pollingInterval) {
     clearInterval(pollingInterval)
     pollingInterval = null
+  }
+
+  if (lastBlocksMtime === null) {
+    lastBlocksMtime = getBlocksFileMtime()
   }
 
   pollingInterval = setInterval(() => {
@@ -54,6 +64,21 @@ function startPolling(): void {
         // File was deleted externally
         lastKnownMtimes.delete(date)
       }
+    }
+
+    const blocksMtime = getBlocksFileMtime()
+    if (blocksMtime !== null && blocksMtime !== lastBlocksMtime) {
+      lastBlocksMtime = blocksMtime
+      const content = readBlocksFile()
+      if (content) {
+        const data = deserializeBlocksFile(content)
+        const windows = BrowserWindow.getAllWindows()
+        for (const win of windows) {
+          win.webContents.send('icloud:blocks-file-changed', data)
+        }
+      }
+    } else if (blocksMtime === null && lastBlocksMtime !== null) {
+      lastBlocksMtime = null
     }
   }, 3000)
 }
@@ -131,5 +156,21 @@ export function registerSyncHandlers(): void {
 
   ipcMain.handle('icloud:list-reviews', () => {
     return listReviewFiles()
+  })
+
+  ipcMain.handle('icloud:read-blocks', () => {
+    const content = readBlocksFile()
+    if (!content) return null
+    return deserializeBlocksFile(content)
+  })
+
+  ipcMain.handle('icloud:write-blocks', (_event, data: BlocksFileData) => {
+    const content = serializeBlocksFile(data)
+    writeBlocksFile(content)
+    const mtime = getBlocksFileMtime()
+    if (mtime !== null) {
+      lastBlocksMtime = mtime
+    }
+    return true
   })
 }

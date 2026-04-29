@@ -9,10 +9,13 @@ import { homedir } from 'os'
 import {
   DayFileData,
   WeeklyReviewData,
+  BlocksFileData,
   serialize,
   deserialize,
   serializeReview,
-  deserializeReview
+  deserializeReview,
+  serializeBlocksFile,
+  deserializeBlocksFile
 } from './markdown.js'
 
 const ICLOUD_FOLDER = process.env.BLOC_DEV === 'true' ? 'Bloc-Dev' : 'Bloc'
@@ -166,4 +169,32 @@ export function writeReview(data: WeeklyReviewData): void {
   data.updatedAt = Date.now()
   const content = serializeReview(data)
   writeReviewFile(data.week, content)
+}
+
+// --- Blocks file (untimed blocks / projects) ---
+
+export function getBlocksFilePath(): string {
+  return join(ICLOUD_BASE, 'blocks.md')
+}
+
+export function readBlocksFile(): string | null {
+  const path = getBlocksFilePath()
+  if (!existsSync(path)) return null
+  return readFileSync(path, 'utf-8')
+}
+
+export function writeBlocksFile(content: string): void {
+  mkdirSync(ICLOUD_BASE, { recursive: true })
+  writeFileSync(getBlocksFilePath(), content, 'utf-8')
+}
+
+export function readBlocks(): BlocksFileData {
+  const content = readBlocksFile()
+  if (!content) return { untimedBlocks: [], tasks: {} }
+  return deserializeBlocksFile(content)
+}
+
+export function writeBlocks(data: BlocksFileData): void {
+  const content = serializeBlocksFile(data)
+  writeBlocksFile(content)
 }

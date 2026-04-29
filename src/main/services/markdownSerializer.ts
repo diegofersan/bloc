@@ -33,6 +33,22 @@ export interface TimeBlockData {
   googleEventId?: string
   isGoogleReadOnly?: boolean
   private?: boolean
+  untimed?: boolean
+}
+
+/** Untimed block (project) — has no date/start/end. Lives in `~/Bloc/blocks.md`. */
+export interface UntimedBlockData {
+  id: string
+  title: string
+  color: TimeBlockColor
+  createdAt: number
+  updatedAt: number
+}
+
+export interface BlocksFileData {
+  untimedBlocks: UntimedBlockData[]
+  /** Keys are storeKeys of the form `__block__<blockId>`. */
+  tasks: Record<string, TaskData[]>
 }
 
 /**
@@ -511,6 +527,87 @@ export function deserialize(content: string): DayFileData {
     ...(Object.keys(blockTasks).length > 0 ? { blockTasks } : {}),
     ...(Object.keys(unknownSections).length > 0 ? { unknownSections } : {})
   }
+}
+
+// --- Blocks file (untimed blocks) ---
+
+function serializeUntimedBlock(b: UntimedBlockData): string {
+  const meta = `@id:${b.id} @color:${b.color} @created:${b.createdAt} @updated:${b.updatedAt}`
+  return `- ${b.title} <!--${meta}-->`
+}
+
+function parseUntimedBlockLine(line: string): UntimedBlockData | null {
+  const match = line.match(/^- (.+?)\s*<!--(.+?)-->/)
+  if (!match) return null
+  const title = match[1].trim()
+  const meta = parseMetaComment(line)
+  if (!meta.id) return null
+  return {
+    id: meta.id,
+    title,
+    color: (meta.color as TimeBlockColor) || 'indigo',
+    createdAt: meta.created ? parseInt(meta.created, 10) : Date.now(),
+    updatedAt: meta.updated ? parseInt(meta.updated, 10) : Date.now()
+  }
+}
+
+export function serializeBlocksFile(data: BlocksFileData): string {
+  const lines: string[] = []
+
+  if (data.untimedBlocks.length > 0) {
+    lines.push('## Blocos')
+    lines.push('')
+    for (const b of data.untimedBlocks) {
+      lines.push(serializeUntimedBlock(b))
+    }
+    lines.push('')
+  }
+
+  for (const block of data.untimedBlocks) {
+    const storeKey = `__block__${block.id}`
+    const tasks = data.tasks[storeKey]
+    if (!tasks || tasks.length === 0) continue
+    lines.push(`### Bloco: ${block.title} <!--@blockId:${block.id}-->`)
+    lines.push('')
+    for (const task of tasks) {
+      lines.push(serializeTask(task, 0))
+    }
+    lines.push('')
+  }
+
+  return lines.join('\n')
+}
+
+export function deserializeBlocksFile(content: string): BlocksFileData {
+  const untimedBlocks: UntimedBlockData[] = []
+  const tasks: Record<string, TaskData[]> = {}
+
+  const sections = content.split(/^## /m)
+  for (let i = 0; i < sections.length; i++) {
+    if (i === 0) continue
+    const section = sections[i]
+    const { heading, body } = splitSection(section)
+    if (heading.trim() !== 'Blocos') continue
+    for (const line of body.split('\n')) {
+      if (line.startsWith('### ')) break
+      const parsed = parseUntimedBlockLine(line)
+      if (parsed) untimedBlocks.push(parsed)
+    }
+  }
+
+  const blockSections = content.split(/^### /m)
+  for (const section of blockSections) {
+    const firstLine = section.split('\n')[0]
+    const blockId = parseBlockTaskHeading('### ' + firstLine)
+    if (!blockId) continue
+    const lines = section.split('\n').slice(1)
+    const parsed = parseTasksSection(lines)
+    if (parsed.length > 0) {
+      tasks[`__block__${blockId}`] = parsed
+    }
+  }
+
+  return { untimedBlocks, tasks }
 }
 
 // --- Weekly Review serialization ---

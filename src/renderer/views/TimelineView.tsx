@@ -268,6 +268,7 @@ export default function TimelineView() {
   const titleInputRef = useRef<HTMLInputElement>(null)
 
   const allBlocks = useTimeBlockStore((s) => s.blocks)
+  const untimedBlocksAll = useTimeBlockStore((s) => s.untimedBlocks)
   const blocks = allBlocks[date!] ?? EMPTY_BLOCKS
   const addBlock = useTimeBlockStore((s) => s.addBlock)
   const updateBlock = useTimeBlockStore((s) => s.updateBlock)
@@ -299,17 +300,24 @@ export default function TimelineView() {
     let count = 0
     const linkedIds = new Set((allTaskRefs[date] || []).map((r) => r.originTaskId))
     for (const [d, taskList] of Object.entries(allStoreTasks)) {
-      const blockMatch = d.match(/^(.+)__block__(.+)$/)
+      const isUntimedBlock = d.startsWith('__block__')
+      const blockMatch = !isUntimedBlock ? d.match(/^(.+)__block__(.+)$/) : null
       const baseDate = blockMatch ? blockMatch[1] : d
-      if (baseDate === date) continue
+      if (!isUntimedBlock && baseDate === date) continue
 
       // When in block detail, only count tasks from blocks with the same title
       if (projectTitleNorm) {
-        if (!blockMatch) continue
-        const blockId = blockMatch[2]
-        const dateBlocks = allBlocks[baseDate] || []
-        const block = dateBlocks.find((b) => b.id === blockId)
-        if (!block || block.title.trim().toLowerCase() !== projectTitleNorm) continue
+        if (isUntimedBlock) {
+          const untimedId = d.slice('__block__'.length)
+          const ub = untimedBlocksAll.find((b) => b.id === untimedId)
+          if (!ub || ub.title.trim().toLowerCase() !== projectTitleNorm) continue
+        } else {
+          if (!blockMatch) continue
+          const blockId = blockMatch[2]
+          const dateBlocks = allBlocks[baseDate] || []
+          const block = dateBlocks.find((b) => b.id === blockId)
+          if (!block || block.title.trim().toLowerCase() !== projectTitleNorm) continue
+        }
       }
 
       for (const task of taskList) {
@@ -317,7 +325,7 @@ export default function TimelineView() {
       }
     }
     return count
-  }, [allStoreTasks, allTaskRefs, allBlocks, date, projectTitleNorm])
+  }, [allStoreTasks, allTaskRefs, allBlocks, untimedBlocksAll, date, projectTitleNorm])
 
   // Split panel divider
   const containerRef = useRef<HTMLDivElement>(null)
