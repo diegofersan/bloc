@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Palette, Trash2, GripVertical, CheckCircle2, CalendarClock, CalendarSync } from 'lucide-react'
+import { Palette, Trash2, GripVertical, CheckCircle2, CalendarClock, CalendarSync, Lock } from 'lucide-react'
 import type { TimeBlock, TimeBlockColor } from '../stores/timeBlockStore'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import ColorPicker from './ColorPicker'
@@ -165,12 +165,19 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onCl
         <GripVertical size={10} className="text-text-muted/40 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
-      {/* Google Calendar sync badge */}
-      {block.googleEventId && (
-        <div className="absolute top-0.5 right-1.5 opacity-40" title="Sincronizado com Google Calendar">
-          <CalendarSync size={10} />
-        </div>
-      )}
+      {/* Top-right badges: privacy + Google Calendar sync */}
+      <div className="absolute top-0.5 right-1.5 flex items-center gap-1">
+        {block.private && (
+          <div className="opacity-60 text-text-muted" title="Privado">
+            <Lock size={10} />
+          </div>
+        )}
+        {block.googleEventId && (
+          <div className="opacity-40" title="Sincronizado com Google Calendar">
+            <CalendarSync size={10} />
+          </div>
+        )}
+      </div>
 
       <div className="px-2 pt-1 pb-1 h-full flex flex-col overflow-hidden">
         <div

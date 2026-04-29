@@ -14,6 +14,7 @@ export interface TimeBlock {
   updatedAt: number
   googleEventId?: string
   isGoogleReadOnly?: boolean
+  private?: boolean
 }
 
 export interface DeletedTimeBlock extends TimeBlock {
@@ -26,7 +27,7 @@ interface TimeBlockState {
   blocks: Record<string, TimeBlock[]>
   deletedBlocks: DeletedTimeBlock[]
   addBlock: (date: string, block: Omit<TimeBlock, 'id' | 'createdAt' | 'updatedAt'>) => string
-  updateBlock: (date: string, blockId: string, updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title' | 'color'>>) => void
+  updateBlock: (date: string, blockId: string, updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title' | 'color' | 'private'>>) => void
   removeBlock: (date: string, blockId: string) => void
   restoreBlock: (blockId: string) => void
   permanentlyDeleteBlock: (blockId: string) => void

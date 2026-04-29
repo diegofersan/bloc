@@ -125,7 +125,8 @@ function formatDaySummary(data: DayFileData): string {
     for (const b of data.timeBlocks) {
       const start = minutesToTime(b.startTime)
       const end = minutesToTime(b.endTime)
-      lines.push(`- ${start}-${end} ${b.title} [${b.color}] (id: ${b.id})`)
+      const privacy = b.private ? ' [private]' : ''
+      lines.push(`- ${start}-${end} ${b.title} [${b.color}]${privacy} (id: ${b.id})`)
     }
     lines.push('')
   }
@@ -359,9 +360,10 @@ IMPORTANT RULES — read carefully:
     title: z.string().min(1).describe('Block title — must not be empty'),
     start_time: z.string().regex(/^\d{2}:\d{2}$/).describe('Start CLOCK TIME in HH:MM 24h format. Example: "09:00" for 9 AM, "14:30" for 2:30 PM. NOT milliseconds, NOT minutes — a clock time.'),
     end_time: z.string().regex(/^\d{2}:\d{2}$/).describe('End CLOCK TIME in HH:MM 24h format. Example: "10:30" for 10:30 AM, "16:00" for 4 PM. Must be after start_time.'),
-    color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)')
+    color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('Block color (default: indigo)'),
+    private: z.boolean().optional().describe('Mark the block as private. When true, the corresponding Google Calendar event is created with visibility=private (others see only "Busy", title hidden).')
   },
-  async ({ date, title, start_time, end_time, color }) => {
+  async ({ date, title, start_time, end_time, color, private: isPrivate }) => {
     // Validate times — stored as minutes from midnight (not milliseconds)
     let startMin: number, endMin: number
     try {
@@ -424,7 +426,8 @@ IMPORTANT RULES — read carefully:
       endTime: endMin,
       color: (color as TimeBlockColor) ?? 'indigo',
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      private: isPrivate || undefined
     }
 
     data.timeBlocks.push(block)
@@ -448,9 +451,10 @@ server.tool(
     title: z.string().optional().describe('New title'),
     start_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe('New start CLOCK TIME in HH:MM 24h format (e.g. "09:00")'),
     end_time: z.string().regex(/^\d{2}:\d{2}$/).optional().describe('New end CLOCK TIME in HH:MM 24h format (e.g. "10:30")'),
-    color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('New color')
+    color: z.enum(['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']).optional().describe('New color'),
+    private: z.boolean().optional().describe('Toggle the block privacy. When true, the corresponding Google Calendar event is updated to visibility=private; when false, it reverts to visibility=default.')
   },
-  async ({ date, block_id, title, start_time, end_time, color }) => {
+  async ({ date, block_id, title, start_time, end_time, color, private: isPrivate }) => {
     const data = readDay(date)
     if (!data) {
       return { content: [{ type: 'text', text: `No data found for ${date}` }], isError: true }
@@ -505,6 +509,7 @@ server.tool(
     block.startTime = newStart
     block.endTime = newEnd
     if (color !== undefined) block.color = color as TimeBlockColor
+    if (isPrivate !== undefined) block.private = isPrivate || undefined
     block.updatedAt = Date.now()
 
     writeDay(data)
