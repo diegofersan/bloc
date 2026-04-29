@@ -77,7 +77,7 @@ export default function PendingPanel({ weekDates }: Props) {
   const now = Date.now()
 
   return (
-    <div className="flex flex-col h-full border-l border-border bg-bg-secondary/50">
+    <div className="flex flex-col h-full min-h-0 border-l border-border bg-bg-secondary/50">
       <div className="shrink-0 px-3 py-3 border-b border-border">
         <div className="text-sm font-medium text-text-primary">Pendentes</div>
         <div className="text-[11px] text-text-muted">{total} {total === 1 ? 'tarefa' : 'tarefas'}</div>
