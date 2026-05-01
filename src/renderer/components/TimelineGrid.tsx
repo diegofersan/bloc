@@ -27,6 +27,7 @@ interface TimelineGridProps {
   onUpdate: (blockId: string, updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title' | 'color'>>) => void
   onRemove: (blockId: string) => void
   onDefer: (blockId: string) => void
+  onFit: (blockId: string) => void
   onBlockClick: (block: TimeBlock) => void
   onCreateBlock: (startTime: number, endTime: number) => void
 }
@@ -36,6 +37,7 @@ export default function TimelineGrid({
   onUpdate,
   onRemove,
   onDefer,
+  onFit,
   onBlockClick,
   onCreateBlock
 }: TimelineGridProps) {
@@ -210,6 +212,7 @@ export default function TimelineGrid({
               onUpdate={onUpdate}
               onRemove={onRemove}
               onDefer={onDefer}
+              onFit={onFit}
               onClick={onBlockClick}
               gridTop={0}
             />

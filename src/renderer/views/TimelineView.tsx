@@ -17,6 +17,8 @@ import FlowQueueView from '../components/FlowQueueView'
 import { useFlowStore } from '../stores/flowStore'
 import PendingTasksPanel from '../components/PendingTasksPanel'
 import HourglassIndicator from '../components/HourglassIndicator'
+import Toast from '../components/Toast'
+import { computeBlockFit } from '../utils/blockFit'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 import { syncDate } from '../services/googleCalendarSync'
 
@@ -276,6 +278,7 @@ export default function TimelineView() {
   const deferBlock = useTimeBlockStore((s) => s.deferBlock)
   const moveBlockTasks = useTaskStore((s) => s.moveBlockTasks)
   const [deferringBlock, setDeferringBlock] = useState<TimeBlock | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   // Flow (Go With The Flow) state
   const flowIsActive = useFlowStore((s) => s.isActive)
@@ -456,6 +459,25 @@ export default function TimelineView() {
       if (b) setDeferringBlock(b)
     },
     [blocks]
+  )
+
+  const handleFit = useCallback(
+    (blockId: string) => {
+      if (!date) return
+      const block = blocks.find((b) => b.id === blockId)
+      if (!block) return
+      const blockKey = `${date}__block__${blockId}`
+      const blockTasks = useTaskStore.getState().tasks[blockKey] ?? []
+      const result = computeBlockFit(block, blockTasks, blocks, blockId)
+      if (result.clamped === 'no-op') return
+      updateBlock(date, blockId, { endTime: result.newEndTime })
+      if (result.clamped === 'next-block') {
+        setToast(`Não há espaço para ${result.overflowMinutes}min adicionais. Bloco ajustado ao máximo possível.`)
+      } else if (result.clamped === 'min-duration') {
+        setToast('Estimativas <15min — bloco ajustado ao mínimo de 15min.')
+      }
+    },
+    [date, blocks, updateBlock]
   )
 
   const commitTitle = useCallback(() => {
@@ -787,7 +809,7 @@ export default function TimelineView() {
         {/* Active tab content */}
         <div className="flex-1 overflow-hidden">
           {activeTab === 'timeline' ? (
-            <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
+            <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onFit={handleFit} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
           ) : (
             <DistractionSidebar date={date!} showHeader={false} />
           )}
@@ -877,7 +899,7 @@ export default function TimelineView() {
 
         {/* Timeline grid */}
         <div className="flex-1 overflow-hidden">
-          <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
+          <TimelineGrid blocks={blocks} onUpdate={handleUpdate} onRemove={handleRemove} onDefer={handleDefer} onFit={handleFit} onBlockClick={handleBlockClick} onCreateBlock={handleCreateBlock} />
         </div>
       </div>
 
@@ -916,6 +938,7 @@ export default function TimelineView() {
           }
         }}
       />
+      <Toast visible={!!toast} message={toast ?? ''} onClose={() => setToast(null)} duration={3500} />
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
-import { Palette, Trash2, GripVertical, CheckCircle2, CalendarClock, CalendarSync, Lock } from 'lucide-react'
+import { Palette, Trash2, GripVertical, CheckCircle2, CalendarClock, CalendarSync, Lock, Sparkles } from 'lucide-react'
 import type { TimeBlock, TimeBlockColor } from '../stores/timeBlockStore'
 import { useTaskStore, type Task } from '../stores/taskStore'
+import { sumBlockEstimates } from '../utils/blockFit'
 import ColorPicker from './ColorPicker'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -41,6 +42,7 @@ interface TimeBlockItemProps {
   onUpdate: (blockId: string, updates: Partial<Pick<TimeBlock, 'startTime' | 'endTime' | 'title' | 'color'>>) => void
   onRemove: (blockId: string) => void
   onDefer: (blockId: string) => void
+  onFit: (blockId: string) => void
   onClick: (block: TimeBlock) => void
   gridTop: number
 }
@@ -59,7 +61,7 @@ function countTasks(tasks: Task[]): { total: number; completed: number } {
   return { total, completed }
 }
 
-export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onClick, gridTop }: TimeBlockItemProps) {
+export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onFit, onClick, gridTop }: TimeBlockItemProps) {
   const [showColorPicker, setShowColorPicker] = useState(false)
   const [pickerAnchor, setPickerAnchor] = useState<{ top: number; left: number } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -72,6 +74,8 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onCl
   const blockKey = `${block.date}__block__${block.id}`
   const blockTasks = useTaskStore(useCallback((s) => s.tasks[blockKey], [blockKey]))
   const taskCounts = useMemo(() => countTasks(blockTasks ?? []), [blockTasks])
+  const estimateSum = useMemo(() => sumBlockEstimates(blockTasks ?? []), [blockTasks])
+  const canFit = !block.untimed && !block.isGoogleReadOnly && estimateSum > 0
 
   const colors = COLOR_MAP[block.color]
   const top = timeToY(block.startTime)
@@ -204,6 +208,19 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onCl
 
         {/* Actions (show on hover) */}
         <div className="mt-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pb-0.5">
+          {canFit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onFit(block.id)
+              }}
+              className="p-0.5 rounded hover:bg-black/5 transition-colors"
+              aria-label="Ajustar duração às tarefas"
+              title="Ajustar duração às tarefas"
+            >
+              <Sparkles size={11} className="text-text-muted" />
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation()
