@@ -26,6 +26,9 @@ if (process.contextIsolated) {
       focusWindow: () => {
         ipcRenderer.send('focus-window')
       },
+      alertAttention: () => {
+        ipcRenderer.send('alert-attention')
+      },
       onUpdateAvailable: (callback: (version: string) => void) => {
         const handler = (_event: Electron.IpcRendererEvent, version: string) => callback(version)
         ipcRenderer.on('update-available', handler)
