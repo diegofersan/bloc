@@ -525,6 +525,67 @@ server.tool(
   }
 )
 
+// fit_time_block
+server.tool(
+  'fit_time_block',
+  'Resize a time block so its duration matches the sum of estimated minutes of its tasks. Mantém startTime; ajusta endTime. Faz clamping ao próximo bloco e à duração mínima de 15 minutos.',
+  {
+    date: z.string().describe('Date in YYYY-MM-DD format'),
+    block_id: z.string().describe('Block ID')
+  },
+  async ({ date, block_id }) => {
+    const { computeBlockFit } = await import('./blockFit.js')
+
+    const data = readDay(date)
+    if (!data) {
+      return { content: [{ type: 'text', text: `No data found for ${date}` }], isError: true }
+    }
+
+    const block = data.timeBlocks?.find(b => b.id === block_id)
+    if (!block) {
+      return { content: [{ type: 'text', text: `Block ${block_id} not found on ${date}` }], isError: true }
+    }
+
+    if (block.untimed) {
+      return { content: [{ type: 'text', text: `Block ${block_id} is untimed and has no duration to fit` }], isError: true }
+    }
+
+    if (block.isGoogleReadOnly) {
+      return { content: [{ type: 'text', text: `Block ${block_id} is read-only (Google Calendar) and cannot be resized` }], isError: true }
+    }
+
+    const tasks = data.blockTasks?.[block_id] ?? []
+    const otherBlocks = (data.timeBlocks ?? []).filter(b => b.id !== block_id)
+
+    const result = computeBlockFit(block, tasks, otherBlocks, block_id)
+
+    if (result.clamped === 'no-op') {
+      const reason = result.desiredDuration === 0 ? 'no task estimates' : 'already aligned'
+      return {
+        content: [{
+          type: 'text',
+          text: `No change to "${block.title}" (${reason}). Current duration: ${block.endTime - block.startTime}min.`
+        }]
+      }
+    }
+
+    block.endTime = result.newEndTime
+    block.updatedAt = Date.now()
+    writeDay(data)
+
+    let msg: string
+    if (result.clamped === 'next-block') {
+      msg = `Fit time block "${block.title}" to ${result.appliedDuration}min — clamped (${result.overflowMinutes}min overflow into next block).`
+    } else if (result.clamped === 'min-duration') {
+      msg = `Fit time block "${block.title}" to 15min minimum (estimates totalled ${result.desiredDuration}min).`
+    } else {
+      msg = `Fit time block "${block.title}" to ${result.appliedDuration}min to match task estimates.`
+    }
+
+    return { content: [{ type: 'text', text: msg }] }
+  }
+)
+
 // delete_time_block
 server.tool(
   'delete_time_block',
