@@ -468,7 +468,15 @@ export default function TimelineView() {
       if (!block) return
       const blockKey = `${date}__block__${blockId}`
       const blockTasks = useTaskStore.getState().tasks[blockKey] ?? []
-      const result = computeBlockFit(block, blockTasks, blocks, blockId)
+      // Use flow-tracked actual time for completed tasks; estimates for the rest.
+      const completedFlowItems = useFlowStore.getState().completedByDate[date] ?? []
+      const actualMinutesByTaskId = new Map<string, number>()
+      for (const item of completedFlowItems) {
+        if (item.blockId !== blockId) continue
+        if (item.timeSpentSeconds <= 0) continue
+        actualMinutesByTaskId.set(item.taskId, Math.ceil(item.timeSpentSeconds / 60))
+      }
+      const result = computeBlockFit(block, blockTasks, blocks, blockId, actualMinutesByTaskId)
       if (result.clamped === 'no-op') return
       updateBlock(date, blockId, { endTime: result.newEndTime })
       if (result.clamped === 'next-block') {

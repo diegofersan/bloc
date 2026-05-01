@@ -1,5 +1,7 @@
-// MIRRORS mcp-server/src/blockFit.ts — keep behavior identical.
-// Any change here MUST be replicated there (and vice versa).
+// MIRRORS mcp-server/src/blockFit.ts — keep behavior identical when no
+// `actualMinutesByTaskId` map is passed. The renderer additionally consults
+// flow-tracked actuals for completed tasks; the MCP version has no flow data,
+// so it always falls back to estimates.
 
 import type { Task } from '../stores/taskStore'
 import type { TimeBlock } from '../stores/timeBlockStore'
@@ -16,23 +18,33 @@ export const MIN_BLOCK_DURATION = 15
 const DAY_END = 1440
 
 /**
- * Sum estimates for a list of tasks (e.g. tasks of a block), recursing into subtasks.
+ * Sum the desired duration of a block's tasks, recursing into subtasks.
  *
- * Anti-double-count rule: if a task has subtasks AND any subtask has an estimate,
- * the parent's own estimate is ignored and the subtree's sum is used.
- * Otherwise, the parent's `estimatedMinutes ?? 0` is used.
+ * For each task:
+ *  1. If completed AND `actualMinutesByTaskId` has an entry → use the actual
+ *     time worked (flow-tracked). Subtasks are not consulted.
+ *  2. Else, if it has subtasks whose subtree sums > 0 → use that subtree sum
+ *     (anti-double-count: parent's own estimate is ignored).
+ *  3. Else → use `estimatedMinutes ?? 0`.
  */
-export function sumBlockEstimates(tasks: Task[]): number {
+export function sumBlockEstimates(
+  tasks: Task[],
+  actualMinutesByTaskId?: Map<string, number>
+): number {
   let total = 0
   for (const t of tasks) {
-    total += sumTaskTree(t)
+    total += sumTaskTree(t, actualMinutesByTaskId)
   }
   return total
 }
 
-function sumTaskTree(task: Task): number {
+function sumTaskTree(task: Task, actualMinutesByTaskId?: Map<string, number>): number {
+  if (task.completed && actualMinutesByTaskId) {
+    const actual = actualMinutesByTaskId.get(task.id)
+    if (actual !== undefined && actual > 0) return actual
+  }
   if (task.subtasks && task.subtasks.length > 0) {
-    const subSum = sumBlockEstimates(task.subtasks)
+    const subSum = sumBlockEstimates(task.subtasks, actualMinutesByTaskId)
     if (subSum > 0) return subSum
   }
   return task.estimatedMinutes ?? 0
@@ -53,9 +65,10 @@ export function computeBlockFit(
   block: Pick<TimeBlock, 'startTime' | 'endTime'>,
   tasks: Task[],
   otherBlocksSameDay: Array<Pick<TimeBlock, 'startTime' | 'endTime' | 'id'>>,
-  blockId: string
+  blockId: string,
+  actualMinutesByTaskId?: Map<string, number>
 ): FitResult {
-  const desired = sumBlockEstimates(tasks)
+  const desired = sumBlockEstimates(tasks, actualMinutesByTaskId)
   const currentDuration = block.endTime - block.startTime
 
   if (desired === 0) {
