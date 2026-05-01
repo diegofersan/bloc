@@ -143,6 +143,10 @@ rm -rf "$TEMP_DIR"
       mainWindow = null
     })
 
+    mainWindow.on('focus', () => {
+      if (process.platform === 'win32') mainWindow?.flashFrame(false)
+    })
+
     mainWindow.webContents.setWindowOpenHandler((details) => {
       shell.openExternal(details.url)
       return { action: 'deny' }
@@ -234,6 +238,15 @@ rm -rf "$TEMP_DIR"
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.show()
       mainWindow.focus()
+    })
+
+    ipcMain.on('alert-attention', () => {
+      if (!mainWindow || mainWindow.isFocused()) return
+      if (process.platform === 'darwin') {
+        app.dock?.bounce('critical')
+      } else if (process.platform === 'win32') {
+        mainWindow.flashFrame(true)
+      }
     })
 
     globalShortcut.register('CommandOrControl+,', () => {

@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react'
 import { Play, Pause, Square, SkipForward } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useFlowStore } from '../stores/flowStore'
+import { usePomodoroStore } from '../stores/pomodoroStore'
 import { playWorkDoneSound, playBreakDoneSound, playCountdownTick } from '../services/notificationSound'
+import { alertWorkDone, alertBreakDone } from '../services/transitionAlert'
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -27,6 +29,7 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
   const skipCurrentTask = useFlowStore((s) => s.skipCurrentTask)
   const secondsRemaining = useFlowStore((s) => s.secondsRemaining)
   const completedPomodoros = useFlowStore((s) => s.completedPomodoros)
+  const breakDuration = usePomodoroStore((s) => s.breakDuration)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -45,9 +48,15 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
   useEffect(() => {
     const prev = prevPhaseRef.current
     prevPhaseRef.current = phase
-    if (prev === 'working' && phase === 'break') playWorkDoneSound()
-    if (prev === 'break' && phase === 'working') playBreakDoneSound()
-  }, [phase])
+    if (prev === 'working' && phase === 'break') {
+      playWorkDoneSound()
+      alertWorkDone(breakDuration)
+    }
+    if (prev === 'break' && phase === 'working') {
+      playBreakDoneSound()
+      alertBreakDone()
+    }
+  }, [phase, breakDuration])
 
   useEffect(() => {
     if (secondsRemaining <= 10 && secondsRemaining > 0 && !isPaused && isActive) {

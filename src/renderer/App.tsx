@@ -31,6 +31,7 @@ declare global {
     bloc?: {
       getAppVersion: () => string
       focusWindow: () => void
+      alertAttention: () => void
       onNavigate: (callback: (path: string) => void) => () => void
       onQuickCapture: (callback: () => void) => () => void
       updatePomodoroTray: (time: string | null, status: string | null) => void

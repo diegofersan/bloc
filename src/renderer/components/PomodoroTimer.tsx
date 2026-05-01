@@ -4,6 +4,7 @@ import { Play, Pause, Square, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { playWorkDoneSound, playBreakDoneSound, playCountdownTick } from '../services/notificationSound'
+import { alertWorkDone, alertBreakDone } from '../services/transitionAlert'
 
 function formatTime(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -14,6 +15,7 @@ function formatTime(seconds: number): string {
 /** Core timer UI — works with any date source */
 export function PomodoroTimerCore({ date }: { date?: string }) {
   const { status, isPaused, secondsRemaining } = usePomodoroStore()
+  const breakDuration = usePomodoroStore((s) => s.breakDuration)
   const startWork = usePomodoroStore((s) => s.startWork)
   const pause = usePomodoroStore((s) => s.pause)
   const resume = usePomodoroStore((s) => s.resume)
@@ -41,10 +43,12 @@ export function PomodoroTimerCore({ date }: { date?: string }) {
 
     if (prev === 'working' && status === 'break') {
       playWorkDoneSound()
+      alertWorkDone(breakDuration)
     } else if (prev === 'break' && status === 'idle') {
       playBreakDoneSound()
+      alertBreakDone()
     }
-  }, [status])
+  }, [status, breakDuration])
 
   // Countdown tick in last 10 seconds
   useEffect(() => {
