@@ -169,15 +169,67 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onFi
         <GripVertical size={10} className="text-text-muted/40 opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
 
-      {/* Top-right badges: privacy + Google Calendar sync */}
-      <div className="absolute top-0.5 right-1.5 flex items-center gap-1">
+      {/* Top-right: actions (hover) + badges (always) */}
+      <div className="absolute top-1 right-1.5 flex items-center gap-0.5 z-10">
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {canFit && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onFit(block.id)
+              }}
+              className="p-0.5 rounded hover:bg-black/10 transition-colors"
+              aria-label="Ajustar duração às tarefas"
+              title="Ajustar duração às tarefas"
+            >
+              <Sparkles size={16} className="text-text-muted" />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setPickerAnchor({ top: rect.bottom + 4, left: rect.left })
+              setShowColorPicker(true)
+            }}
+            className="p-0.5 rounded hover:bg-black/10 transition-colors"
+            aria-label="Cor"
+            title="Cor"
+          >
+            <Palette size={16} className="text-text-muted" />
+          </button>
+          {!block.isGoogleReadOnly && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onDefer(block.id)
+              }}
+              className="p-0.5 rounded hover:bg-black/10 transition-colors"
+              aria-label="Adiar"
+              title="Adiar"
+            >
+              <CalendarClock size={16} className="text-text-muted" />
+            </button>
+          )}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowDeleteConfirm(true)
+            }}
+            className="p-0.5 rounded hover:bg-black/10 transition-colors"
+            aria-label="Eliminar"
+            title="Eliminar"
+          >
+            <Trash2 size={16} className="text-text-muted" />
+          </button>
+        </div>
         {block.private && (
-          <div className="opacity-60 text-text-muted" title="Privado">
+          <div className="opacity-60 text-text-muted ml-0.5" title="Privado">
             <Lock size={10} />
           </div>
         )}
         {block.googleEventId && (
-          <div className="opacity-40" title="Sincronizado com Google Calendar">
+          <div className="opacity-40 ml-0.5" title="Sincronizado com Google Calendar">
             <CalendarSync size={10} />
           </div>
         )}
@@ -205,58 +257,6 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onFi
             </span>
           </div>
         )}
-
-        {/* Actions (show on hover) */}
-        <div className="mt-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity pb-0.5">
-          {canFit && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onFit(block.id)
-              }}
-              className="p-0.5 rounded hover:bg-black/5 transition-colors"
-              aria-label="Ajustar duração às tarefas"
-              title="Ajustar duração às tarefas"
-            >
-              <Sparkles size={11} className="text-text-muted" />
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              setPickerAnchor({ top: rect.bottom + 4, left: rect.left })
-              setShowColorPicker(true)
-            }}
-            className="p-0.5 rounded hover:bg-black/5 transition-colors"
-            aria-label="Cor"
-          >
-            <Palette size={11} className="text-text-muted" />
-          </button>
-          {!block.isGoogleReadOnly && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onDefer(block.id)
-              }}
-              className="p-0.5 rounded hover:bg-black/5 transition-colors"
-              aria-label="Adiar"
-            >
-              <CalendarClock size={11} className="text-text-muted" />
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              setShowDeleteConfirm(true)
-            }}
-            className="p-0.5 rounded hover:bg-black/5 transition-colors"
-            aria-label="Eliminar"
-          >
-            <Trash2 size={11} className="text-text-muted" />
-          </button>
-        </div>
-
       </div>
 
       {/* Color picker — portal to body, positioned via anchorRect */}
