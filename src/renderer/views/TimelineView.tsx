@@ -158,6 +158,13 @@ function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
     return stored ? Number(stored) : 75
   })
   const [isDragging, setIsDragging] = useState(false)
+  const [isStacked, setIsStacked] = useState(() => window.innerWidth < 800)
+
+  useEffect(() => {
+    const onResize = () => setIsStacked(window.innerWidth < 800)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   const handleDividerDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -169,8 +176,14 @@ function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
     function onMouseMove(e: MouseEvent) {
       if (!containerRef.current) return
       const rect = containerRef.current.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      let pct = (x / rect.width) * 100
+      let pct: number
+      if (isStacked) {
+        const y = e.clientY - rect.top
+        pct = (y / rect.height) * 100
+      } else {
+        const x = e.clientX - rect.left
+        pct = (x / rect.width) * 100
+      }
       pct = Math.max(30, Math.min(85, pct))
       setFlowLeftPct(pct)
     }
@@ -184,12 +197,19 @@ function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [isDragging, leftPct])
+  }, [isDragging, leftPct, isStacked])
 
   return (
-    <div ref={containerRef} className="h-full flex bg-bg-primary" style={{ cursor: isDragging ? 'col-resize' : undefined }}>
-      {/* Left: titlebar + timer + queue */}
-      <div style={{ width: `${leftPct}%` }} className="flex flex-col overflow-hidden">
+    <div
+      ref={containerRef}
+      className={`h-full flex bg-bg-primary ${isStacked ? 'flex-col' : ''}`}
+      style={{ cursor: isDragging ? (isStacked ? 'row-resize' : 'col-resize') : undefined }}
+    >
+      {/* Left/Top: titlebar + timer + queue */}
+      <div
+        style={isStacked ? { height: `${leftPct}%` } : { width: `${leftPct}%` }}
+        className="flex flex-col overflow-hidden"
+      >
         <div className={`titlebar-drag shrink-0 ${isNarrow ? 'px-3 pt-[38px]' : 'pl-5 pr-5 pt-[50px]'} pb-2`}>
           <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <FlowTimer />
@@ -227,19 +247,36 @@ function FlowLayout({ date, isNarrow }: { date: string; isNarrow: boolean }) {
       {/* Divider */}
       <div
         onMouseDown={handleDividerDown}
-        className="shrink-0 w-[5px] relative group cursor-col-resize flex items-center justify-center"
+        className={`shrink-0 relative group flex items-center justify-center ${
+          isStacked ? 'h-[5px] w-full cursor-row-resize' : 'w-[5px] cursor-col-resize'
+        }`}
       >
-        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-border/0 group-hover:bg-border/40 transition-colors" />
+        <div
+          className={`absolute bg-border/0 group-hover:bg-border/40 transition-colors ${
+            isStacked
+              ? 'inset-x-0 top-1/2 -translate-y-1/2 h-px'
+              : 'inset-y-0 left-1/2 -translate-x-1/2 w-px'
+          }`}
+        />
         {isDragging && (
-          <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px panel-divider-active" />
+          <div
+            className={`absolute panel-divider-active ${
+              isStacked
+                ? 'inset-x-0 top-1/2 -translate-y-1/2 h-px'
+                : 'inset-y-0 left-1/2 -translate-x-1/2 w-px'
+            }`}
+          />
         )}
         <span className="text-text-muted/40 group-hover:text-text-muted/70 transition-colors text-xs select-none" aria-hidden="true">•••</span>
       </div>
 
-      {/* Right: Distractions sidebar — full height */}
-      <div style={{ width: `${100 - leftPct}%` }} className="overflow-hidden glass-panel">
+      {/* Right/Bottom: Distractions sidebar */}
+      <div
+        style={isStacked ? { height: `${100 - leftPct}%` } : { width: `${100 - leftPct}%` }}
+        className="overflow-hidden glass-panel"
+      >
         <div className="h-full flex flex-col">
-          <div className="shrink-0 h-[50px]" />
+          {!isStacked && <div className="shrink-0 h-[50px]" />}
           <div className="flex-1 min-h-0">
             <DistractionSidebar date={date} showHeader keyboardShortcut />
           </div>
