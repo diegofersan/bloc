@@ -94,7 +94,7 @@ export default function DailyStandupModal({
   const [result, setResult] = useState<StandupResult | null>(null)
   const [isEnhancing, setIsEnhancing] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copiedKey, setCopiedKey] = useState<'all' | 'yesterday' | 'today' | 'blockers' | null>(null)
   const previousFocusRef = useRef<Element | null>(null)
   const snapshotsRef = useRef<{ yesterday: DaySnapshot; today: DaySnapshot } | null>(null)
 
@@ -117,7 +117,7 @@ export default function DailyStandupModal({
 
     setResult(formatTemplateStandup(yesterday, today))
     setAiError(null)
-    setCopied(false)
+    setCopiedKey(null)
   }, [visible])
 
   // Restore focus on close
@@ -140,12 +140,30 @@ export default function DailyStandupModal({
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [visible, onClose])
 
-  const handleCopy = useCallback(async () => {
-    if (!result) return
-    await navigator.clipboard.writeText(formatForClipboard(result))
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }, [result])
+  const handleCopySection = useCallback(
+    async (key: 'all' | 'yesterday' | 'today' | 'blockers') => {
+      if (!result) return
+      let text: string
+      switch (key) {
+        case 'all':
+          text = formatForClipboard(result)
+          break
+        case 'yesterday':
+          text = `*Ontem:*\n${result.yesterday}`
+          break
+        case 'today':
+          text = `*Hoje:*\n${result.today}`
+          break
+        case 'blockers':
+          text = `*Bloqueios:*\n${result.blockers}`
+          break
+      }
+      await navigator.clipboard.writeText(text)
+      setCopiedKey(key)
+      setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 2000)
+    },
+    [result]
+  )
 
   const handleEnhanceAI = useCallback(async () => {
     if (!snapshotsRef.current) return
@@ -219,9 +237,26 @@ export default function DailyStandupModal({
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
               {result && (
                 <>
-                  <Section title="Ontem" content={result.yesterday} taskCounts={yesterdayCounts} />
-                  <Section title="Hoje" content={result.today} taskCounts={todayCounts} />
-                  <Section title="Bloqueios" content={result.blockers} />
+                  <Section
+                    title="Ontem"
+                    content={result.yesterday}
+                    taskCounts={yesterdayCounts}
+                    copied={copiedKey === 'yesterday'}
+                    onCopy={() => handleCopySection('yesterday')}
+                  />
+                  <Section
+                    title="Hoje"
+                    content={result.today}
+                    taskCounts={todayCounts}
+                    copied={copiedKey === 'today'}
+                    onCopy={() => handleCopySection('today')}
+                  />
+                  <Section
+                    title="Bloqueios"
+                    content={result.blockers}
+                    copied={copiedKey === 'blockers'}
+                    onCopy={() => handleCopySection('blockers')}
+                  />
                 </>
               )}
 
@@ -262,11 +297,11 @@ export default function DailyStandupModal({
               </div>
 
               <button
-                onClick={handleCopy}
+                onClick={() => handleCopySection('all')}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
               >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                {copied ? 'Copiado!' : 'Copiar'}
+                {copiedKey === 'all' ? <Check size={14} /> : <Copy size={14} />}
+                {copiedKey === 'all' ? 'Copiado!' : 'Copiar tudo'}
               </button>
             </div>
           </motion.div>
@@ -279,17 +314,31 @@ export default function DailyStandupModal({
 function Section({
   title,
   content,
-  taskCounts
+  taskCounts,
+  copied,
+  onCopy
 }: {
   title: string
   content: string
   taskCounts?: { total: number; completed: number }
+  copied?: boolean
+  onCopy?: () => void
 }) {
   return (
     <div>
-      <h3 className="text-xs font-semibold text-text-secondary mb-1.5">
-        {title}
-      </h3>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <h3 className="text-xs font-semibold text-text-secondary">{title}</h3>
+        {onCopy && (
+          <button
+            onClick={onCopy}
+            aria-label={`Copiar ${title}`}
+            title={`Copiar ${title}`}
+            className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors"
+          >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        )}
+      </div>
       {taskCounts && taskCounts.total > 0 && (
         <TaskProgressBar completed={taskCounts.completed} total={taskCounts.total} />
       )}

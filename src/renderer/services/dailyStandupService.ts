@@ -79,7 +79,7 @@ function countSubtasks(subtasks: Task[]): { done: number; total: number } {
 
 export function gatherDayData(date: string): DaySnapshot {
   const tasks = useTaskStore.getState().getTasksForDate(date)
-  const blocks = useTimeBlockStore.getState().getBlocksForDate(date)
+  const blocks = useTimeBlockStore.getState().getBlocksForDate(date).filter((b) => !b.private)
   const pomodoros = usePomodoroStore.getState().getCompletedForDate(date)
 
   const taskItems: TaskSummary[] = tasks.map((t) => {
