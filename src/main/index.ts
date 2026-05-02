@@ -1,6 +1,6 @@
 import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, Menu } from 'electron'
 import { join } from 'path'
-import { existsSync, writeFileSync, chmodSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { spawn } from 'child_process'
 import { tmpdir } from 'os'
 import { is } from '@electron-toolkit/utils'
@@ -18,6 +18,38 @@ if (!gotTheLock) {
 } else {
   let mainWindow: BrowserWindow | null = null
   let tray: Tray | null = null
+
+  // ── Window preferences (persisted) ──────────────────────────────────
+  interface WindowPrefs {
+    alwaysOnTop: boolean
+  }
+
+  const WINDOW_PREFS_FILE = 'window-prefs.json'
+
+  function getWindowPrefsPath(): string {
+    return join(app.getPath('userData'), WINDOW_PREFS_FILE)
+  }
+
+  function loadWindowPrefs(): WindowPrefs {
+    const path = getWindowPrefsPath()
+    if (!existsSync(path)) return { alwaysOnTop: false }
+    try {
+      return JSON.parse(readFileSync(path, 'utf-8'))
+    } catch {
+      return { alwaysOnTop: false }
+    }
+  }
+
+  function saveWindowPrefs(prefs: WindowPrefs): void {
+    writeFileSync(getWindowPrefsPath(), JSON.stringify(prefs, null, 2))
+  }
+
+  let windowPrefs: WindowPrefs = { alwaysOnTop: false }
+
+  function applyAlwaysOnTop(win: BrowserWindow, enabled: boolean): void {
+    win.setAlwaysOnTop(enabled)
+    win.setVisibleOnAllWorkspaces(enabled, { visibleOnFullScreen: true })
+  }
 
   function getIconPath(): string | undefined {
     // In production, icons are in the build resources bundled by electron-builder
@@ -124,6 +156,7 @@ rm -rf "$TEMP_DIR"
       backgroundColor: bgColor,
       icon: iconPath,
       show: false,
+      alwaysOnTop: windowPrefs.alwaysOnTop,
       webPreferences: {
         preload: join(__dirname, '../preload/index.mjs'),
         sandbox: false,
@@ -131,6 +164,10 @@ rm -rf "$TEMP_DIR"
         nodeIntegration: false
       }
     })
+
+    if (windowPrefs.alwaysOnTop) {
+      applyAlwaysOnTop(mainWindow, true)
+    }
 
     mainWindow.on('ready-to-show', () => {
       mainWindow!.show()
@@ -171,6 +208,8 @@ rm -rf "$TEMP_DIR"
     registerSiteBlockerHandlers()
     registerGoogleCalendarHandlers()
 
+    windowPrefs = loadWindowPrefs()
+
     // Application menu
     const menuTemplate: Electron.MenuItemConstructorOptions[] = [
       ...(process.platform === 'darwin' ? [{
@@ -201,7 +240,19 @@ rm -rf "$TEMP_DIR"
         label: 'Ver',
         submenu: [
           { role: 'reload' as const },
-          { role: 'toggleDevTools' as const }
+          { role: 'toggleDevTools' as const },
+          { type: 'separator' as const },
+          {
+            label: 'Sobrepor outras janelas',
+            type: 'checkbox' as const,
+            checked: windowPrefs.alwaysOnTop,
+            accelerator: 'CommandOrControl+Alt+T',
+            click: (item) => {
+              windowPrefs = { ...windowPrefs, alwaysOnTop: item.checked }
+              if (mainWindow) applyAlwaysOnTop(mainWindow, item.checked)
+              saveWindowPrefs(windowPrefs)
+            }
+          }
         ]
       },
       {
