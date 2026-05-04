@@ -1,22 +1,15 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Calendar, X, Inbox, ListTodo, Eye, EyeOff, Plus } from 'lucide-react'
+import { ArrowLeft, Calendar, X, Inbox, Boxes, Eye, EyeOff, Plus, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTaskStore, type Distraction, type Task, type BlockGroup, BACKLOG_KEY } from '../stores/taskStore'
 import { useTimeBlockStore } from '../stores/timeBlockStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import CreateBlockModal from '../components/CreateBlockModal'
-
-const COLOR_DOT_CLASS: Record<string, string> = {
-  indigo: 'bg-indigo-500',
-  emerald: 'bg-emerald-500',
-  amber: 'bg-amber-500',
-  rose: 'bg-rose-500',
-  sky: 'bg-sky-500',
-  violet: 'bg-violet-500',
-  slate: 'bg-slate-500'
-}
+import DeleteBlockConfirmModal from '../components/DeleteBlockConfirmModal'
+import { COLOR_MAP } from '../components/TimeBlockItem'
 
 type Tab = 'inbox' | 'tasks'
 
@@ -75,8 +68,8 @@ export default function InboxView() {
               : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover'
           }`}
         >
-          <ListTodo size={14} />
-          Tarefas
+          <Boxes size={14} />
+          Blocos
         </button>
       </div>
 
@@ -188,13 +181,21 @@ function countSubtaskStats(subtasks: Task[]): { done: number; total: number } {
   return { done, total }
 }
 
+function hasPendingItems(group: BlockGroup): boolean {
+  return group.items.some((it) => !it.task.completed && !it.task.wontDo)
+}
+
 function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnType<typeof useNavigate> }) {
   const tasks = useTaskStore((s) => s.tasks)
   const getTasksGroupedByBlockTitle = useTaskStore((s) => s.getTasksGroupedByBlockTitle)
   const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
+  const hideEmptyBlocks = useSettingsStore((s) => s.hideEmptyBlocks)
+  const setHideEmptyBlocks = useSettingsStore((s) => s.setHideEmptyBlocks)
   const [showCompleted, setShowCompleted] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Recompute via deps so cross-store changes trigger a re-render. The selector
   // itself reads both stores but Zustand subscriptions only fire for the store
@@ -205,20 +206,68 @@ function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
     [tasks, untimedBlocks, allBlocks, getTasksGroupedByBlockTitle]
   )
 
-  const totalPending = useMemo(() => {
-    let n = 0
-    for (const g of groups) {
-      for (const it of g.items) {
-        if (!it.task.completed && !it.task.wontDo) n++
+  const filteredGroups = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    return groups.filter((g) => {
+      if (g.blockId === null) {
+        // "Sem bloco": só aparece quando não há pesquisa
+        if (term !== '') return false
+        if (hideEmptyBlocks && !hasPendingItems(g)) return false
+        return true
+      }
+      if (term && !g.title.toLowerCase().includes(term)) return false
+      if (hideEmptyBlocks && !hasPendingItems(g)) return false
+      return true
+    })
+  }, [groups, searchTerm, hideEmptyBlocks])
+
+  // Local ⌘F (or Ctrl+F) to focus search input
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
       }
     }
-    return n
-  }, [groups])
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  const noData = groups.every((g) => g.items.length === 0)
+  const noMatches = !noData && filteredGroups.length === 0
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className={`flex-1 overflow-y-auto pb-8 ${isNarrow ? 'px-3' : 'pl-5 pr-6'}`}>
-        <div className="flex items-center justify-between pt-4 mb-4 gap-2">
+        <div className="flex items-center pt-4 mb-3 gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted/60" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Pesquisar bloco…"
+              className="w-full pl-7 pr-7 py-1 text-xs bg-bg-secondary/60 border border-border/40 rounded-lg text-text-primary placeholder:text-text-muted/50 focus:outline-none focus:border-accent/50 focus:bg-bg-secondary"
+              spellCheck={false}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  searchInputRef.current?.focus()
+                }}
+                aria-label="Limpar pesquisa"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-4 gap-2">
           <button
             onClick={() => setCreateOpen(true)}
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-secondary hover:text-text-primary rounded-lg hover:bg-bg-hover transition-colors"
@@ -226,16 +275,25 @@ function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
             <Plus size={14} />
             Criar bloco
           </button>
-          <button
-            onClick={() => setShowCompleted((v) => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
-          >
-            {showCompleted ? <EyeOff size={12} /> : <Eye size={12} />}
-            {showCompleted ? 'Esconder concluídas' : 'Mostrar concluídas'}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setHideEmptyBlocks(!hideEmptyBlocks)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
+            >
+              {hideEmptyBlocks ? <Eye size={12} /> : <EyeOff size={12} />}
+              {hideEmptyBlocks ? 'Mostrar vazios' : 'Ocultar vazios'}
+            </button>
+            <button
+              onClick={() => setShowCompleted((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-text-muted hover:text-text-secondary rounded-lg hover:bg-bg-hover transition-colors"
+            >
+              {showCompleted ? <EyeOff size={12} /> : <Eye size={12} />}
+              {showCompleted ? 'Esconder concluídas' : 'Mostrar concluídas'}
+            </button>
+          </div>
         </div>
 
-        {totalPending === 0 && groups.every((g) => g.items.length === 0) ? (
+        {noData ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -244,15 +302,40 @@ function TasksTab({ isNarrow, navigate }: { isNarrow: boolean; navigate: ReturnT
           >
             <p className="text-sm text-text-muted">Sem tarefas. Cria um bloco para começar.</p>
           </motion.div>
+        ) : noMatches ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="flex flex-col items-center justify-center text-center py-16 gap-2"
+          >
+            {searchTerm.trim() ? (
+              <>
+                <p className="text-sm text-text-muted">
+                  Nenhum bloco corresponde a "{searchTerm.trim()}".
+                </p>
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="text-xs text-accent hover:underline"
+                >
+                  Limpar pesquisa
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-text-muted">Sem blocos com tarefas pendentes.</p>
+            )}
+          </motion.div>
         ) : (
-          groups.map((group) => (
-            <BlockGroupView
-              key={group.blockId ?? '__sem_bloco__'}
-              group={group}
-              showCompleted={showCompleted}
-              navigate={navigate}
-            />
-          ))
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
+            {filteredGroups.map((group) => (
+              <BlockGroupView
+                key={group.blockId ?? '__sem_bloco__'}
+                group={group}
+                showCompleted={showCompleted}
+                navigate={navigate}
+              />
+            ))}
+          </div>
         )}
       </div>
 
@@ -271,12 +354,16 @@ function BlockGroupView({
   navigate: ReturnType<typeof useNavigate>
 }) {
   const addTask = useTaskStore((s) => s.addTask)
+  const removeTask = useTaskStore((s) => s.removeTask)
+  const moveTask = useTaskStore((s) => s.moveTask)
   const addUntimedBlock = useTimeBlockStore((s) => s.addUntimedBlock)
   const removeUntimedBlock = useTimeBlockStore((s) => s.removeUntimedBlock)
   const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [isDropTarget, setIsDropTarget] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const visibleItems = useMemo(
@@ -292,6 +379,31 @@ function BlockGroupView({
     if (adding) setTimeout(() => inputRef.current?.focus(), 30)
   }, [adding])
 
+  // Resolve which storeKey hosts new/moved tasks for this group.
+  // For "Sem bloco" → backlog; otherwise auto-create the untimed bridge if needed.
+  function resolveTargetKey(): string {
+    if (group.blockId === null) return BACKLOG_KEY
+    const titleKey = group.title.trim().toLowerCase()
+    const existingUntimed = untimedBlocks.find(
+      (b) => b.title.trim().toLowerCase() === titleKey
+    )
+    let hostId = existingUntimed?.id
+    if (!hostId) {
+      let color = group.color
+      if (!color) {
+        for (const dateBlocks of Object.values(allBlocks)) {
+          const match = dateBlocks.find((b) => b.title.trim().toLowerCase() === titleKey)
+          if (match) {
+            color = match.color
+            break
+          }
+        }
+      }
+      hostId = addUntimedBlock({ title: group.title, color: color ?? 'indigo' })
+    }
+    return `__block__${hostId}`
+  }
+
   function commitNewTask() {
     const text = draft.trim()
     if (!text) {
@@ -299,38 +411,7 @@ function BlockGroupView({
       setDraft('')
       return
     }
-    let targetKey: string
-
-    if (group.blockId === null) {
-      // "Sem bloco" → backlog
-      targetKey = BACKLOG_KEY
-    } else {
-      // Group identified by title. Resolve a hosting key:
-      //   1) prefer an existing untimed block with the same title (case-insensitive trimmed)
-      //   2) otherwise auto-create one (bridge), inheriting color from the group
-      const titleKey = group.title.trim().toLowerCase()
-      const existingUntimed = untimedBlocks.find(
-        (b) => b.title.trim().toLowerCase() === titleKey
-      )
-      let hostId = existingUntimed?.id
-      if (!hostId) {
-        // Pick a sensible color: group's resolved color or first dated instance, fallback indigo
-        let color = group.color
-        if (!color) {
-          for (const dateBlocks of Object.values(allBlocks)) {
-            const match = dateBlocks.find((b) => b.title.trim().toLowerCase() === titleKey)
-            if (match) {
-              color = match.color
-              break
-            }
-          }
-        }
-        hostId = addUntimedBlock({ title: group.title, color: color ?? 'indigo' })
-      }
-      targetKey = `__block__${hostId}`
-    }
-
-    addTask(targetKey, text)
+    addTask(resolveTargetKey(), text)
     setDraft('')
     // Keep the input open for chained captures, but blur if Esc/blur handler runs.
     setTimeout(() => inputRef.current?.focus(), 0)
@@ -342,35 +423,88 @@ function BlockGroupView({
     () => (isSemBloco ? [] : untimedBlocks.filter((b) => b.title.trim().toLowerCase() === titleKey)),
     [untimedBlocks, titleKey, isSemBloco]
   )
-  const canDelete = !isSemBloco && group.items.length === 0 && matchingUntimed.length > 0
+  const canDelete = !isSemBloco
 
-  function handleDelete() {
-    for (const ub of matchingUntimed) removeUntimedBlock(ub.id)
+  function confirmDelete() {
+    // 1. Apagar todas as tarefas em qualquer storeKey
+    for (const it of group.items) {
+      removeTask(it.storeKey, it.task.id)
+    }
+    // 2. Apagar untimed blocks correspondentes (se existirem)
+    for (const ub of matchingUntimed) {
+      removeUntimedBlock(ub.id)
+    }
+    // 3. TimeBlock agendados ficam intactos (decisão de spec)
+    setConfirmDeleteOpen(false)
   }
 
+  // ── Drop target ───────────────────────────────────────────────────
+  const acceptsDrop = !isSemBloco
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
+    if (!acceptsDrop) return
+    if (!e.dataTransfer.types.includes('application/x-bloc-task')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (!isDropTarget) setIsDropTarget(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    // Only clear when the cursor truly leaves the group container, not when
+    // it crosses a child element boundary.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setIsDropTarget(false)
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    setIsDropTarget(false)
+    if (!acceptsDrop) return
+    const raw = e.dataTransfer.getData('application/x-bloc-task')
+    if (!raw) return
+    e.preventDefault()
+    let payload: { storeKey?: string; taskId?: string }
+    try {
+      payload = JSON.parse(raw)
+    } catch {
+      return
+    }
+    const fromKey = payload.storeKey
+    const taskId = payload.taskId
+    if (!fromKey || !taskId) return
+    const targetKey = resolveTargetKey()
+    if (fromKey === targetKey) return
+    moveTask(fromKey, targetKey, taskId)
+  }
+
+  const colors = isSemBloco ? COLOR_MAP.slate : COLOR_MAP[group.color ?? 'slate']
+
   return (
-    <div className="mb-5">
-      <div className="group/header flex items-center gap-2 mb-2 sticky top-0 bg-bg-primary py-1 z-[1]">
-        {!isSemBloco && (
-          <span
-            className={`shrink-0 w-2.5 h-2.5 rounded-full ${COLOR_DOT_CLASS[group.color ?? 'slate'] ?? 'bg-slate-500'}`}
-          />
-        )}
+    <div
+      className={`group/card rounded-lg border ${colors.border} ${colors.bg} p-3 transition-shadow ${
+        isDropTarget ? 'ring-2 ring-accent/60 shadow-lg' : ''
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <div className="group/header flex items-center gap-2 mb-2">
         <h3
-          className={`flex-1 text-xs font-semibold uppercase tracking-wider ${
-            isSemBloco ? 'text-text-muted/70 italic' : 'text-text-secondary'
+          className={`flex-1 text-sm font-semibold truncate ${
+            isSemBloco ? 'text-text-muted/70 italic' : colors.text
           }`}
         >
           {group.title}
         </h3>
         {pendingCount > 0 && (
-          <span className="text-[10px] tabular-nums text-text-muted">{pendingCount}</span>
+          <span className={`text-[10px] tabular-nums ${isSemBloco ? 'text-text-muted' : colors.text + ' opacity-70'}`}>
+            {pendingCount}
+          </span>
         )}
         {canDelete && (
           <button
-            onClick={handleDelete}
-            aria-label="Eliminar bloco vazio"
-            className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors opacity-0 group-hover/header:opacity-100 focus:opacity-100"
+            onClick={() => setConfirmDeleteOpen(true)}
+            aria-label="Eliminar bloco"
+            className="p-1 rounded text-text-muted hover:text-rose-500 hover:bg-black/5 transition-colors opacity-0 group-hover/card:opacity-100 focus:opacity-100"
           >
             <X size={14} />
           </button>
@@ -378,7 +512,7 @@ function BlockGroupView({
         <button
           onClick={() => setAdding((v) => !v)}
           aria-label="Adicionar tarefa"
-          className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors"
+          className="p-1 rounded text-text-muted hover:text-text-secondary hover:bg-black/5 transition-colors"
         >
           <Plus size={14} />
         </button>
@@ -435,6 +569,16 @@ function BlockGroupView({
           />
         ))
       )}
+
+      {canDelete && (
+        <DeleteBlockConfirmModal
+          visible={confirmDeleteOpen}
+          blockTitle={group.title}
+          taskCount={group.items.length}
+          onConfirm={confirmDelete}
+          onCancel={() => setConfirmDeleteOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -458,6 +602,7 @@ function TaskItem({
   const removeTask = useTaskStore((s) => s.removeTask)
   const sub = countSubtaskStats(task.subtasks)
   const visibleSubtasks = showCompleted ? task.subtasks : task.subtasks.filter((s) => !s.completed)
+  const [isDragging, setIsDragging] = useState(false)
 
   const canNavigate = date !== null
   const handleNavigate = () => {
@@ -469,9 +614,29 @@ function TaskItem({
     }
   }
 
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>) {
+    e.dataTransfer.setData(
+      'application/x-bloc-task',
+      JSON.stringify({ storeKey, taskId: task.id })
+    )
+    e.dataTransfer.effectAllowed = 'move'
+    setIsDragging(true)
+  }
+
+  function handleDragEnd() {
+    setIsDragging(false)
+  }
+
   return (
     <div>
-      <div className="group flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors">
+      <div
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        className={`group flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors cursor-grab active:cursor-grabbing ${
+          isDragging ? 'opacity-40' : ''
+        }`}
+      >
         <button
           onClick={() => toggleTask(storeKey, task.id)}
           className={`shrink-0 w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-all ${

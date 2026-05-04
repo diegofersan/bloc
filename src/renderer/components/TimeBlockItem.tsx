@@ -17,7 +17,7 @@ function timeToY(minutes: number): number {
   return (shifted / 60) * HOUR_HEIGHT
 }
 
-const COLOR_MAP: Record<TimeBlockColor, { bg: string; border: string; text: string }> = {
+export const COLOR_MAP: Record<TimeBlockColor, { bg: string; border: string; text: string }> = {
   indigo: { bg: 'bg-indigo-500/15', border: 'border-indigo-500/30', text: 'text-indigo-700' },
   emerald: { bg: 'bg-emerald-500/15', border: 'border-emerald-500/30', text: 'text-emerald-700' },
   amber: { bg: 'bg-amber-500/15', border: 'border-amber-500/30', text: 'text-amber-700' },
@@ -292,4 +292,4 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onFi
   )
 }
 
-export { HOUR_HEIGHT, SNAP_MINUTES, START_HOUR, COLOR_MAP, formatTime, timeToY }
+export { HOUR_HEIGHT, SNAP_MINUTES, START_HOUR, formatTime, timeToY }

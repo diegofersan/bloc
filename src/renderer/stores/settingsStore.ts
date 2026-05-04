@@ -21,6 +21,8 @@ interface SettingsState {
   confettiOnComplete: boolean
   /** Weekly planning view: show 5 (Mon–Fri) or 7 (Mon–Sun) day columns. */
   weekViewDays: WeekViewDays
+  /** Blocks view: hide groups with no pending tasks. */
+  hideEmptyBlocks: boolean
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
@@ -29,6 +31,7 @@ interface SettingsState {
   setGithubToken: (token: string) => void
   setConfettiOnComplete: (v: boolean) => void
   setWeekViewDays: (days: WeekViewDays) => void
+  setHideEmptyBlocks: (v: boolean) => void
   isConfigured: () => boolean
 }
 
@@ -43,6 +46,7 @@ export const useSettingsStore = create<SettingsState>()(
       githubToken: '',
       confettiOnComplete: true,
       weekViewDays: 7,
+      hideEmptyBlocks: false,
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },
@@ -73,6 +77,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setWeekViewDays: (days) => {
         set({ weekViewDays: days })
+      },
+
+      setHideEmptyBlocks: (v) => {
+        set({ hideEmptyBlocks: v })
       },
 
       isConfigured: () => {
