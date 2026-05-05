@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Palette, Trash2, GripVertical, CheckCircle2, CalendarClock, CalendarSync, Lock, Sparkles } from 'lucide-react'
-import type { TimeBlock, TimeBlockColor } from '../stores/timeBlockStore'
+import { useTimeBlockStore, type TimeBlock, type TimeBlockColor } from '../stores/timeBlockStore'
 import { useTaskStore, type Task } from '../stores/taskStore'
-import { sumBlockEstimates } from '../utils/blockFit'
+import { sumBlockEstimates, collectBlockTasks } from '../utils/blockFit'
 import ColorPicker from './ColorPicker'
 import ConfirmDialog from './ConfirmDialog'
 
@@ -71,10 +71,20 @@ export default function TimeBlockItem({ block, onUpdate, onRemove, onDefer, onFi
   const resizeRef = useRef<{ startY: number; startEnd: number }>({ startY: 0, startEnd: 0 })
   const didDrag = useRef(false)
 
-  const blockKey = `${block.date}__block__${block.id}`
-  const blockTasks = useTaskStore(useCallback((s) => s.tasks[blockKey], [blockKey]))
-  const taskCounts = useMemo(() => countTasks(blockTasks ?? []), [blockTasks])
-  const estimateSum = useMemo(() => sumBlockEstimates(blockTasks ?? []), [blockTasks])
+  const allTasks = useTaskStore((s) => s.tasks)
+  const dayRefs = useTaskStore(useCallback((s) => s.taskRefs[block.date], [block.date]))
+  const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
+  const blockTasks = useMemo(
+    () =>
+      collectBlockTasks(
+        block,
+        { tasks: allTasks, taskRefs: { [block.date]: dayRefs ?? [] } },
+        untimedBlocks
+      ),
+    [block, allTasks, dayRefs, untimedBlocks]
+  )
+  const taskCounts = useMemo(() => countTasks(blockTasks), [blockTasks])
+  const estimateSum = useMemo(() => sumBlockEstimates(blockTasks), [blockTasks])
   const canFit = !block.untimed && !block.isGoogleReadOnly && estimateSum > 0
 
   const colors = COLOR_MAP[block.color]

@@ -3,8 +3,8 @@
 // flow-tracked actuals for completed tasks; the MCP version has no flow data,
 // so it always falls back to estimates.
 
-import type { Task } from '../stores/taskStore'
-import type { TimeBlock } from '../stores/timeBlockStore'
+import type { Task, TaskRef } from '../stores/taskStore'
+import type { TimeBlock, UntimedBlock } from '../stores/timeBlockStore'
 
 export interface FitResult {
   newEndTime: number
@@ -16,6 +16,66 @@ export interface FitResult {
 
 export const MIN_BLOCK_DURATION = 15
 const DAY_END = 1440
+
+function findTaskInTree(list: Task[], id: string): Task | null {
+  for (const t of list) {
+    if (t.id === id) return t
+    if (t.subtasks.length > 0) {
+      const found = findTaskInTree(t.subtasks, id)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Collect the tasks that belong to a TimeBlock for fit/count purposes.
+ *
+ * Combines:
+ *  1. Explicit tasks at storeKey `<date>__block__<id>`.
+ *  2. Tasks resolved via `taskRefs[<date>]` whose origin is an untimed block
+ *     sharing the same (case-insensitive trimmed) title — only pending ones
+ *     (not completed, not wontDo).
+ *
+ * Pure: caller passes the relevant slice of state.
+ */
+export function collectBlockTasks(
+  block: Pick<TimeBlock, 'id' | 'date' | 'title'>,
+  state: {
+    tasks: Record<string, Task[]>
+    taskRefs: Record<string, TaskRef[]>
+  },
+  untimedBlocks: UntimedBlock[]
+): Task[] {
+  const blockKey = `${block.date}__block__${block.id}`
+  const explicit = state.tasks[blockKey] ?? []
+
+  const titleNorm = block.title?.trim().toLowerCase()
+  if (!titleNorm) return [...explicit]
+
+  const matchingUntimedIds = new Set(
+    untimedBlocks
+      .filter((ub) => ub.title.trim().toLowerCase() === titleNorm)
+      .map((ub) => ub.id)
+  )
+  if (matchingUntimedIds.size === 0) return [...explicit]
+
+  const refs = state.taskRefs[block.date] ?? []
+  const refTasks: Task[] = []
+  for (const ref of refs) {
+    if (!ref.originDate.startsWith('__block__')) continue
+    const untimedId = ref.originDate.slice('__block__'.length)
+    if (!matchingUntimedIds.has(untimedId)) continue
+    const originList = state.tasks[ref.originDate]
+    if (!originList) continue
+    const found = findTaskInTree(originList, ref.originTaskId)
+    if (found && !found.completed && !found.wontDo) {
+      refTasks.push(found)
+    }
+  }
+
+  return [...explicit, ...refTasks]
+}
 
 /**
  * Sum the desired duration of a block's tasks, recursing into subtasks.

@@ -18,7 +18,7 @@ import { useFlowStore } from '../stores/flowStore'
 import PendingTasksPanel from '../components/PendingTasksPanel'
 import HourglassIndicator from '../components/HourglassIndicator'
 import Toast from '../components/Toast'
-import { computeBlockFit } from '../utils/blockFit'
+import { computeBlockFit, collectBlockTasks } from '../utils/blockFit'
 import { loadDayFromICloud, watchDate } from '../services/syncService'
 import { syncDate } from '../services/googleCalendarSync'
 
@@ -513,8 +513,13 @@ export default function TimelineView() {
       if (!date) return
       const block = blocks.find((b) => b.id === blockId)
       if (!block) return
-      const blockKey = `${date}__block__${blockId}`
-      const blockTasks = useTaskStore.getState().tasks[blockKey] ?? []
+      const taskState = useTaskStore.getState()
+      const tbState = useTimeBlockStore.getState()
+      const blockTasks = collectBlockTasks(
+        block,
+        { tasks: taskState.tasks, taskRefs: taskState.taskRefs },
+        tbState.untimedBlocks
+      )
       // Use flow-tracked actual time for completed tasks; estimates for the rest.
       const completedFlowItems = useFlowStore.getState().completedByDate[date] ?? []
       const actualMinutesByTaskId = new Map<string, number>()
