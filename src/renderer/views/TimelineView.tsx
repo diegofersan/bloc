@@ -314,6 +314,7 @@ export default function TimelineView() {
   const removeBlock = useTimeBlockStore((s) => s.removeBlock)
   const deferBlock = useTimeBlockStore((s) => s.deferBlock)
   const moveBlockTasks = useTaskStore((s) => s.moveBlockTasks)
+  const reconcileBlockRefs = useTaskStore((s) => s.reconcileBlockRefs)
   const [deferringBlock, setDeferringBlock] = useState<TimeBlock | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -334,6 +335,15 @@ export default function TimelineView() {
     ? blocks.find((b) => b.id === activeBlockId)
     : null
   const projectTitleNorm = activeBlockForCount?.title?.trim().toLowerCase() || null
+
+  // When entering detail mode (or when the active block's title changes),
+  // ensure refs exist for every pending task of any untimed block sharing
+  // the same title. Bridges untimed-block tasks (incl. via MCP) into the
+  // scheduled instance.
+  useEffect(() => {
+    if (viewMode !== 'detail' || !activeBlockForCount || !date) return
+    reconcileBlockRefs(activeBlockForCount.title, date)
+  }, [viewMode, activeBlockForCount?.id, activeBlockForCount?.title, date, reconcileBlockRefs])
 
   const pendingCount = useMemo(() => {
     if (!date) return 0

@@ -151,6 +151,12 @@ interface TaskState {
   toggleTaskRef: (refDate: string, refId: string) => void
   removeTaskRef: (refDate: string, refId: string) => void
   getResolvedTask: (ref: TaskRef) => Task | null
+  /**
+   * For a TimeBlock with given title scheduled on `blockDate`, ensure a TaskRef
+   * exists in `taskRefs[blockDate]` for each pending top-level task of any
+   * untimed block sharing the same (case-insensitive) title. Idempotent.
+   */
+  reconcileBlockRefs: (blockTitle: string, blockDate: string) => void
   /** Pending tasks across the archive, grouped by their parent block. */
   getPendingByBlock: () => PendingGroup[]
   /** All tasks grouped by block title (cross-date). Untimed blocks without tasks still appear. */
@@ -867,6 +873,79 @@ export const useTaskStore = create<TaskState>()(
             [targetDate]: [...(s.taskRefs[targetDate] || []), ref]
           }
         }))
+      },
+
+      reconcileBlockRefs: (blockTitle, blockDate) => {
+        const titleKey = blockTitle.trim().toLowerCase()
+        if (!titleKey) return
+        const tbState = useTimeBlockStore.getState()
+        const matchingUntimed = tbState.untimedBlocks.filter(
+          (ub) => ub.title.trim().toLowerCase() === titleKey
+        )
+        if (matchingUntimed.length === 0) return
+
+        const state = get()
+        const existingRefs = state.taskRefs[blockDate] ?? []
+        const existingPairs = new Set(
+          existingRefs.map((r) => `${r.originDate}::${r.originTaskId}`)
+        )
+
+        const now = Date.now()
+        const newRefs: TaskRef[] = []
+        const taskUpdates: Array<{ originDate: string; taskId: string; refId: string }> = []
+
+        for (const ub of matchingUntimed) {
+          const originDate = `__block__${ub.id}`
+          const originTasks = state.tasks[originDate]
+          if (!originTasks) continue
+          for (const task of originTasks) {
+            if (task.completed || task.wontDo) continue
+            const pairKey = `${originDate}::${task.id}`
+            if (existingPairs.has(pairKey)) continue
+            const refId = crypto.randomUUID()
+            newRefs.push({
+              id: refId,
+              originDate,
+              originTaskId: task.id,
+              titleSnapshot: task.text,
+              addedAt: now
+            })
+            taskUpdates.push({ originDate, taskId: task.id, refId })
+            existingPairs.add(pairKey)
+          }
+        }
+
+        if (newRefs.length === 0) return
+
+        set((s) => {
+          const updatedTasks = { ...s.tasks }
+          // Group updates by originDate so each list is updated once.
+          const byOrigin = new Map<string, typeof taskUpdates>()
+          for (const u of taskUpdates) {
+            const list = byOrigin.get(u.originDate)
+            if (list) list.push(u)
+            else byOrigin.set(u.originDate, [u])
+          }
+          for (const [originDate, updates] of byOrigin) {
+            let list = s.tasks[originDate]
+            if (!list) continue
+            for (const u of updates) {
+              list = updateTaskInList(list, u.taskId, (t) => ({
+                ...t,
+                references: [...(t.references || []), { date: blockDate, taskId: u.refId }],
+                instanceHistory: [...(t.instanceHistory || []), { date: blockDate, addedAt: now }]
+              }))
+            }
+            updatedTasks[originDate] = list
+          }
+          return {
+            tasks: updatedTasks,
+            taskRefs: {
+              ...s.taskRefs,
+              [blockDate]: [...(s.taskRefs[blockDate] || []), ...newRefs]
+            }
+          }
+        })
       },
 
       toggleTaskRef: (refDate, refId) => {
