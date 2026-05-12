@@ -1,6 +1,8 @@
-import { useTimeBlockStore, type TimeBlock, type TimeBlockColor } from '../stores/timeBlockStore'
+import { useTimeBlockStore, type TimeBlock } from '../stores/timeBlockStore'
 import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns'
+import { withRetry } from './syncRetry'
+import { blocColorToGcal, gcalColorToBloc } from './googleCalendarColors'
 
 const LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -12,6 +14,7 @@ interface GCalEvent {
   status: string
   updated: string
   visibility?: string
+  colorId?: string
 }
 
 function isPrivateVisibility(v: string | undefined): boolean {
@@ -63,7 +66,7 @@ function eventToTimeBlock(event: GCalEvent, date: string): TimeBlock | null {
     startTime: dateTimeToMinutes(event.start.dateTime),
     endTime: dateTimeToMinutes(event.end.dateTime),
     title: event.summary || 'Sem título',
-    color: 'sky' as TimeBlockColor,
+    color: gcalColorToBloc(event.colorId),
     createdAt: Date.now(),
     updatedAt: new Date(event.updated).getTime(),
     googleEventId: event.id,
@@ -78,12 +81,15 @@ async function pushLocalBlocksToGcal(date: string, calendarId: string): Promise<
 
   for (const block of localOnly) {
     try {
-      const result = await window.bloc?.gcal.createEvent(calendarId, {
-        summary: block.title,
-        start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
-        visibility: block.private ? 'private' : 'default'
-      })
+      const result = await withRetry(() =>
+        window.bloc?.gcal.createEvent(calendarId, {
+          summary: block.title,
+          start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+          end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+          colorId: blocColorToGcal(block.color),
+          visibility: block.private ? 'private' : 'default'
+        })
+      )
 
       if (result?.success && result.event) {
         const event = result.event as GCalEvent
@@ -116,12 +122,15 @@ async function pushUpdatedBlocksToGcal(date: string, calendarId: string): Promis
     if (block.updatedAt <= pushed) continue
 
     try {
-      await window.bloc?.gcal.updateEvent(calendarId, gcalId, {
-        summary: block.title,
-        start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-        end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
-        visibility: block.private ? 'private' : 'default'
-      })
+      await withRetry(() =>
+        window.bloc?.gcal.updateEvent(calendarId, gcalId, {
+          summary: block.title,
+          start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+          end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+          colorId: blocColorToGcal(block.color),
+          visibility: block.private ? 'private' : 'default'
+        })
+      )
       lastPushedAt.set(gcalId, Date.now())
     } catch (err) {
       console.error('[gcal-sync] Failed to update event in GCal:', err)
@@ -137,7 +146,7 @@ async function processPendingDeletes(calendarId: string): Promise<void> {
 
   for (const googleEventId of toDelete) {
     try {
-      await window.bloc?.gcal.deleteEvent(calendarId, googleEventId)
+      await withRetry(() => window.bloc?.gcal.deleteEvent(calendarId, googleEventId))
       lastPushedAt.delete(googleEventId)
     } catch (err) {
       console.error('[gcal-sync] Failed to delete event from GCal:', err)
@@ -205,6 +214,7 @@ async function pullEventsFromGcal(date: string, calendarId: string): Promise<voi
                   startTime: dateTimeToMinutes(event.start.dateTime!),
                   endTime: dateTimeToMinutes(event.end.dateTime!),
                   title: event.summary || b.title,
+                  color: gcalColorToBloc(event.colorId),
                   updatedAt: eventUpdatedAt,
                   private: isPrivateVisibility(event.visibility) ? true : undefined
                 }
@@ -371,12 +381,15 @@ function setupReactivePush(): void {
           if (!block) continue
 
           try {
-            await window.bloc?.gcal.updateEvent(calId, googleEventId, {
-              summary: block.title,
-              start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
-              end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
-              visibility: block.private ? 'private' : 'default'
-            })
+            await withRetry(() =>
+              window.bloc?.gcal.updateEvent(calId, googleEventId, {
+                summary: block.title,
+                start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
+                end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
+                colorId: blocColorToGcal(block.color),
+                visibility: block.private ? 'private' : 'default'
+              })
+            )
             lastPushedAt.set(googleEventId, Date.now())
           } catch (err) {
             console.error('[gcal-sync] Reactive push failed:', err)

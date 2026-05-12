@@ -24,6 +24,7 @@ import { playIdleWarningSound } from './services/notificationSound'
 import { initSync, cleanup as cleanupSync } from './services/syncService'
 import { startPeriodicSync, stopPeriodicSync } from './services/googleCalendarSync'
 import { useGoogleCalendarStore } from './stores/googleCalendarStore'
+import GoogleSyncStatusBadge from './components/GoogleSyncStatusBadge'
 import { useFlowStore } from './stores/flowStore'
 
 declare global {
@@ -453,6 +454,7 @@ export default function App() {
         <IdeaButton
           onToast={(msg, action) => setToast({ message: msg, visible: true, action })}
         />
+        <GoogleSyncStatusBadge />
       </div>
     </HashRouter>
   )

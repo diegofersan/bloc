@@ -66,6 +66,7 @@ export function registerGoogleCalendarHandlers(): void {
         summary: string
         start: { dateTime: string; timeZone?: string }
         end: { dateTime: string; timeZone?: string }
+        colorId?: string
         visibility?: 'private' | 'public' | 'default' | 'confidential'
       }
     ) => {
@@ -88,6 +89,7 @@ export function registerGoogleCalendarHandlers(): void {
         summary?: string
         start?: { dateTime: string; timeZone?: string }
         end?: { dateTime: string; timeZone?: string }
+        colorId?: string
         visibility?: 'private' | 'public' | 'default' | 'confidential'
       }
     ) => {
