@@ -3,6 +3,7 @@ import { useGoogleCalendarStore } from '../stores/googleCalendarStore'
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns'
 import { withRetry } from './syncRetry'
 import { blocColorToGcal, gcalColorToBloc } from './googleCalendarColors'
+import { gcalCreateEvent, gcalDeleteEvent, gcalUpdateEvent } from './gcalIpc'
 
 const LOCAL_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -81,8 +82,8 @@ async function pushLocalBlocksToGcal(date: string, calendarId: string): Promise<
 
   for (const block of localOnly) {
     try {
-      const result = await withRetry(() =>
-        window.bloc?.gcal.createEvent(calendarId, {
+      const { event: created } = await withRetry(() =>
+        gcalCreateEvent(calendarId, {
           summary: block.title,
           start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
           end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
@@ -91,19 +92,17 @@ async function pushLocalBlocksToGcal(date: string, calendarId: string): Promise<
         })
       )
 
-      if (result?.success && result.event) {
-        const event = result.event as GCalEvent
-        // Update the block with the Google Event ID
-        const currentBlocks = useTimeBlockStore.getState().blocks[date] || []
-        const updated = currentBlocks.map((b) =>
-          b.id === block.id ? { ...b, googleEventId: event.id } : b
-        )
-        useTimeBlockStore.setState({
-          blocks: { ...useTimeBlockStore.getState().blocks, [date]: updated }
-        })
-        // Mark as just pushed so we don't re-push immediately
-        lastPushedAt.set(event.id, Date.now())
-      }
+      const event = created as GCalEvent
+      // Update the block with the Google Event ID
+      const currentBlocks = useTimeBlockStore.getState().blocks[date] || []
+      const updated = currentBlocks.map((b) =>
+        b.id === block.id ? { ...b, googleEventId: event.id } : b
+      )
+      useTimeBlockStore.setState({
+        blocks: { ...useTimeBlockStore.getState().blocks, [date]: updated }
+      })
+      // Mark as just pushed so we don't re-push immediately
+      lastPushedAt.set(event.id, Date.now())
     } catch (err) {
       console.error('[gcal-sync] Failed to push block to GCal:', err)
     }
@@ -123,7 +122,7 @@ async function pushUpdatedBlocksToGcal(date: string, calendarId: string): Promis
 
     try {
       await withRetry(() =>
-        window.bloc?.gcal.updateEvent(calendarId, gcalId, {
+        gcalUpdateEvent(calendarId, gcalId, {
           summary: block.title,
           start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
           end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
@@ -146,7 +145,7 @@ async function processPendingDeletes(calendarId: string): Promise<void> {
 
   for (const googleEventId of toDelete) {
     try {
-      await withRetry(() => window.bloc?.gcal.deleteEvent(calendarId, googleEventId))
+      await withRetry(() => gcalDeleteEvent(calendarId, googleEventId))
       lastPushedAt.delete(googleEventId)
     } catch (err) {
       console.error('[gcal-sync] Failed to delete event from GCal:', err)
@@ -382,7 +381,7 @@ function setupReactivePush(): void {
 
           try {
             await withRetry(() =>
-              window.bloc?.gcal.updateEvent(calId, googleEventId, {
+              gcalUpdateEvent(calId, googleEventId, {
                 summary: block.title,
                 start: { dateTime: minutesToDateTime(date, block.startTime), timeZone: LOCAL_TIMEZONE },
                 end: { dateTime: minutesToDateTime(date, block.endTime), timeZone: LOCAL_TIMEZONE },
