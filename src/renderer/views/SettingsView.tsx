@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2, FlaskConical, Eraser, Boxes } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Check, X, Plus, Shield, Calendar, RefreshCw, LogOut, Trash2, FlaskConical, Eraser, Boxes, FolderOpen } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { format, addDays, formatDistanceToNow } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -41,7 +41,14 @@ export default function SettingsView() {
   const { provider, apiKey, model, setProvider, setApiKey, setModel, primaryTimezone, secondaryTimezone, setPrimaryTimezone, setSecondaryTimezone, githubToken, setGithubToken } = useSettingsStore()
   const { workDuration, breakDuration, setWorkDuration, setBreakDuration } = usePomodoroStore()
 
-  const { confettiOnComplete, setConfettiOnComplete } = useSettingsStore()
+  const {
+    confettiOnComplete,
+    setConfettiOnComplete,
+    flowMusicFolderPath,
+    flowMusicShuffle,
+    setFlowMusicFolderPath,
+    setFlowMusicShuffle,
+  } = useSettingsStore()
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
   const {
     isConnected: gcalConnected,
@@ -394,6 +401,71 @@ export default function SettingsView() {
             </button>
           </div>
 
+          <div className="flex items-center justify-between mt-4">
+            <div className="pr-4">
+              <label className="text-sm font-medium text-text-secondary">Ordem aleatória (pasta Flow)</label>
+              <p className="text-xs text-text-muted mt-0.5">Baralha a lista quando mudas a pasta ou esta opção.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFlowMusicShuffle(!flowMusicShuffle)}
+              className={`relative w-10 h-6 rounded-full transition-colors ${
+                flowMusicShuffle ? 'bg-accent' : 'bg-bg-tertiary'
+              }`}
+              aria-label={flowMusicShuffle ? 'Ordem aleatória' : 'Ordem alfabética'}
+            >
+              <motion.div
+                className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                animate={{ x: flowMusicShuffle ? 16 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-border bg-bg-secondary/50 p-4">
+            <div className="flex items-start gap-3">
+              <FolderOpen size={18} className="text-text-muted shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <label className="text-sm font-medium text-text-secondary">Música durante o Fluxo</label>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Toca ficheiros desta pasta durante o foco Pomodoro na vista Fluxo. Pausa automaticamente no intervalo.
+                </p>
+                {flowMusicFolderPath ? (
+                  <p className="text-[11px] text-text-muted font-mono truncate mt-2" title={flowMusicFolderPath}>
+                    {flowMusicFolderPath}
+                  </p>
+                ) : (
+                  <p className="text-xs text-text-muted mt-2">Nenhuma pasta seleccionada</p>
+                )}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <motion.button
+                    type="button"
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={async () => {
+                      const p = await window.bloc?.music?.pickFolder()
+                      if (p) setFlowMusicFolderPath(p)
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors"
+                  >
+                    <FolderOpen size={14} />
+                    Escolher pasta
+                  </motion.button>
+                  {flowMusicFolderPath ? (
+                    <motion.button
+                      type="button"
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => setFlowMusicFolderPath(null)}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm text-text-secondary hover:bg-bg-hover transition-colors"
+                    >
+                      Limpar
+                    </motion.button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
 
           <hr className="border-border my-8" />
 

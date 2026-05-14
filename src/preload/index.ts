@@ -116,6 +116,12 @@ if (process.contextIsolated) {
           ipcRenderer.invoke('gcal:update-event', calendarId, eventId, eventData),
         deleteEvent: (calendarId: string, eventId: string) =>
           ipcRenderer.invoke('gcal:delete-event', calendarId, eventId)
+      },
+      music: {
+        pickFolder: (): Promise<string | null> =>
+          ipcRenderer.invoke('music:pick-folder'),
+        listAudioFiles: (folderPath: string): Promise<string[]> =>
+          ipcRenderer.invoke('music:list-audio', folderPath)
       }
     })
   } catch (error) {

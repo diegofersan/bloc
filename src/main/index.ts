@@ -9,6 +9,7 @@ const { autoUpdater } = pkg
 import { registerSyncHandlers } from './ipc/syncHandlers'
 import { registerSiteBlockerHandlers } from './ipc/siteBlockerHandlers'
 import { registerGoogleCalendarHandlers } from './ipc/googleCalendarHandlers'
+import { registerFileMusicHandlers } from './ipc/fileMusicHandlers'
 import { startIdleMonitor } from './ipc/idleHandlers'
 
 const gotTheLock = app.requestSingleInstanceLock()
@@ -207,6 +208,7 @@ rm -rf "$TEMP_DIR"
     registerSyncHandlers()
     registerSiteBlockerHandlers()
     registerGoogleCalendarHandlers()
+    registerFileMusicHandlers()
 
     windowPrefs = loadWindowPrefs()
 

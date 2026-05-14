@@ -26,6 +26,7 @@ import { startPeriodicSync, stopPeriodicSync } from './services/googleCalendarSy
 import { useGoogleCalendarStore } from './stores/googleCalendarStore'
 import GoogleSyncStatusBadge from './components/GoogleSyncStatusBadge'
 import { useFlowStore } from './stores/flowStore'
+import FlowLocalMusic from './components/FlowLocalMusic'
 
 declare global {
   interface Window {
@@ -70,6 +71,10 @@ declare global {
         createEvent: (calendarId: string, eventData: unknown) => Promise<{ success: boolean; event?: unknown; error?: string }>
         updateEvent: (calendarId: string, eventId: string, eventData: unknown) => Promise<{ success: boolean; event?: unknown; error?: string }>
         deleteEvent: (calendarId: string, eventId: string) => Promise<{ success: boolean; error?: string }>
+      }
+      music: {
+        pickFolder: () => Promise<string | null>
+        listAudioFiles: (folderPath: string) => Promise<string[]>
       }
     }
   }
@@ -455,6 +460,7 @@ export default function App() {
           onToast={(msg, action) => setToast({ message: msg, visible: true, action })}
         />
         <GoogleSyncStatusBadge />
+        <FlowLocalMusic />
       </div>
     </HashRouter>
   )

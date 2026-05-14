@@ -23,6 +23,10 @@ interface SettingsState {
   weekViewDays: WeekViewDays
   /** Blocks view: hide groups with no pending tasks. */
   hideEmptyBlocks: boolean
+  /** Pasta com ficheiros de áudio tocados durante o Flow (fase foco). */
+  flowMusicFolderPath: string | null
+  /** Ordem aleatória na lista de ficheiros da pasta. */
+  flowMusicShuffle: boolean
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
@@ -32,6 +36,8 @@ interface SettingsState {
   setConfettiOnComplete: (v: boolean) => void
   setWeekViewDays: (days: WeekViewDays) => void
   setHideEmptyBlocks: (v: boolean) => void
+  setFlowMusicFolderPath: (path: string | null) => void
+  setFlowMusicShuffle: (v: boolean) => void
   isConfigured: () => boolean
 }
 
@@ -47,6 +53,8 @@ export const useSettingsStore = create<SettingsState>()(
       confettiOnComplete: true,
       weekViewDays: 7,
       hideEmptyBlocks: false,
+      flowMusicFolderPath: null,
+      flowMusicShuffle: true,
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },
@@ -81,6 +89,14 @@ export const useSettingsStore = create<SettingsState>()(
 
       setHideEmptyBlocks: (v) => {
         set({ hideEmptyBlocks: v })
+      },
+
+      setFlowMusicFolderPath: (path) => {
+        set({ flowMusicFolderPath: path })
+      },
+
+      setFlowMusicShuffle: (v) => {
+        set({ flowMusicShuffle: v })
       },
 
       isConfigured: () => {
