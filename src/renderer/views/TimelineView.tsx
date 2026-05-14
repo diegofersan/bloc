@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardList, Waves, Play, Lock } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -305,16 +305,21 @@ export default function TimelineView() {
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
-
+  const blockTitleListId = useId()
   const allBlocks = useTimeBlockStore((s) => s.blocks)
   const untimedBlocksAll = useTimeBlockStore((s) => s.untimedBlocks)
+  const getDistinctBlockTitles = useTimeBlockStore((s) => s.getDistinctBlockTitles)
+  const blockTitleSuggestions = useMemo(
+    () => getDistinctBlockTitles(editingBlockId ?? undefined),
+    [allBlocks, untimedBlocksAll, editingBlockId, getDistinctBlockTitles]
+  )
+
   const blocks = allBlocks[date!] ?? EMPTY_BLOCKS
   const addBlock = useTimeBlockStore((s) => s.addBlock)
   const updateBlock = useTimeBlockStore((s) => s.updateBlock)
   const removeBlock = useTimeBlockStore((s) => s.removeBlock)
   const deferBlock = useTimeBlockStore((s) => s.deferBlock)
   const moveBlockTasks = useTaskStore((s) => s.moveBlockTasks)
-  const reconcileBlockRefs = useTaskStore((s) => s.reconcileBlockRefs)
   const [deferringBlock, setDeferringBlock] = useState<TimeBlock | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
@@ -336,14 +341,10 @@ export default function TimelineView() {
     : null
   const projectTitleNorm = activeBlockForCount?.title?.trim().toLowerCase() || null
 
-  // When entering detail mode (or when the active block's title changes),
-  // ensure refs exist for every pending task of any untimed block sharing
-  // the same title. Bridges untimed-block tasks (incl. via MCP) into the
-  // scheduled instance.
-  useEffect(() => {
-    if (viewMode !== 'detail' || !activeBlockForCount || !date) return
-    reconcileBlockRefs(activeBlockForCount.title, date)
-  }, [viewMode, activeBlockForCount?.id, activeBlockForCount?.title, date, reconcileBlockRefs])
+  // Tarefas em blocos sem data (projectos) ficam na sidebar / pendentes até serem
+  // ligadas explicitamente a este dia (refs da semana, MCP, arrastar, etc.).
+  // Não chamamos reconcileBlockRefs ao abrir o bloco — isso povoava a lista do
+  // calendário automaticamente só por coincidência de título.
 
   const pendingCount = useMemo(() => {
     if (!date) return 0
@@ -522,11 +523,15 @@ export default function TimelineView() {
       )
       // Use flow-tracked actual time for completed tasks; estimates for the rest.
       const completedFlowItems = useFlowStore.getState().completedByDate[date] ?? []
+      const refs = taskState.taskRefs[date] ?? []
       const actualMinutesByTaskId = new Map<string, number>()
       for (const item of completedFlowItems) {
         if (item.blockId !== blockId) continue
         if (item.timeSpentSeconds <= 0) continue
-        actualMinutesByTaskId.set(item.taskId, Math.ceil(item.timeSpentSeconds / 60))
+        const mins = Math.ceil(item.timeSpentSeconds / 60)
+        actualMinutesByTaskId.set(item.taskId, mins)
+        const ref = refs.find((r) => r.id === item.taskId)
+        if (ref) actualMinutesByTaskId.set(ref.originTaskId, mins)
       }
       const result = computeBlockFit(block, blockTasks, blocks, blockId, actualMinutesByTaskId)
       if (result.clamped === 'no-op') return
@@ -860,7 +865,24 @@ export default function TimelineView() {
           {editingBlockId && activeTab === 'timeline' && (
             <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="shrink-0 px-3 pb-2">
               <div className="flex items-center gap-2 rounded-lg bg-bg-secondary border border-accent/30 px-3 py-2">
-                <input ref={titleInputRef} type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') commitTitle() }} onBlur={commitTitle} placeholder="Nome do bloco..." className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50" />
+                <datalist id={blockTitleListId}>
+                  {blockTitleSuggestions.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={editTitle}
+                  list={blockTitleListId}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === 'Escape') commitTitle()
+                  }}
+                  onBlur={commitTitle}
+                  placeholder="Nome do bloco..."
+                  className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50"
+                />
               </div>
             </motion.div>
           )}
@@ -950,7 +972,24 @@ export default function TimelineView() {
           {editingBlockId && (
             <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="shrink-0 pl-5 pr-5 pb-2">
               <div className="flex items-center gap-2 rounded-lg bg-bg-secondary border border-accent/30 px-3 py-2">
-                <input ref={titleInputRef} type="text" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') commitTitle() }} onBlur={commitTitle} placeholder="Nome do bloco..." className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50" />
+                <datalist id={blockTitleListId}>
+                  {blockTitleSuggestions.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                <input
+                  ref={titleInputRef}
+                  type="text"
+                  value={editTitle}
+                  list={blockTitleListId}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === 'Escape') commitTitle()
+                  }}
+                  onBlur={commitTitle}
+                  placeholder="Nome do bloco..."
+                  className="flex-1 text-sm bg-transparent outline-none text-text-primary placeholder:text-text-muted/50"
+                />
                 <span className="text-[10px] text-text-muted">Enter para confirmar</span>
               </div>
             </motion.div>

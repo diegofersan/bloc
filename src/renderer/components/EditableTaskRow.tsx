@@ -8,6 +8,7 @@ import { useTaskStore, type Task } from '../stores/taskStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { expandTaskV2 } from '../services/expansionPipeline'
 import DeferTaskModal from './DeferTaskModal'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 const MAX_DEPTH = 2
 
@@ -518,41 +519,42 @@ export default function EditableTaskRow({
         originDate={date}
       />
 
-      {pasteLines && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={handleCancelPaste}>
-          <div className="bg-bg-primary border border-border rounded-xl shadow-lg w-80 max-h-[60vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 px-4 pt-4 pb-2">
-              <ListPlus size={16} className="text-text-secondary shrink-0" />
-              <h3 className="text-sm font-medium text-text-primary">
-                Criar {pasteLines.length} subtarefas?
-              </h3>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              <ul className="space-y-1">
-                {pasteLines.map((line, i) => (
-                  <li key={i} className="text-xs text-text-secondary truncate">
-                    • {line}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="flex gap-2 px-4 py-3 border-t border-border">
-              <button
-                onClick={handleCancelPaste}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-secondary transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleConfirmPaste}
-                className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
-              >
-                Criar subtarefas
-              </button>
+      {pasteLines &&
+        portalToBody(
+          <div className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/30`} onClick={handleCancelPaste}>
+            <div className="bg-bg-primary border border-border rounded-xl shadow-lg w-80 max-h-[60vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2 px-4 pt-4 pb-2">
+                <ListPlus size={16} className="text-text-secondary shrink-0" />
+                <h3 className="text-sm font-medium text-text-primary">
+                  Criar {pasteLines.length} subtarefas?
+                </h3>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-2">
+                <ul className="space-y-1">
+                  {pasteLines.map((line, i) => (
+                    <li key={i} className="text-xs text-text-secondary truncate">
+                      • {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="flex gap-2 px-4 py-3 border-t border-border">
+                <button
+                  onClick={handleCancelPaste}
+                  className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-border text-text-secondary hover:bg-bg-secondary transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmPaste}
+                  className="flex-1 px-3 py-1.5 text-xs rounded-lg bg-accent text-white hover:bg-accent/90 transition-colors"
+                >
+                  Criar subtarefas
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
     </motion.div>
   )
 }

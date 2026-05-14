@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { AlertTriangle } from 'lucide-react'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 interface DeleteBlockConfirmModalProps {
   visible: boolean
@@ -43,7 +44,7 @@ export default function DeleteBlockConfirmModal({
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [visible, onCancel])
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {visible && (
         <motion.div
@@ -54,7 +55,7 @@ export default function DeleteBlockConfirmModal({
           role="dialog"
           aria-modal="true"
           aria-label="Confirmar eliminação"
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-start justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onCancel}
         >
           <motion.div

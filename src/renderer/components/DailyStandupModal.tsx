@@ -13,6 +13,7 @@ import {
 import { useSettingsStore } from '../stores/settingsStore'
 import { useTaskStore, type Task } from '../stores/taskStore'
 import { useTimeBlockStore } from '../stores/timeBlockStore'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 // ── Recursive task counting ─────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export default function DailyStandupModal({
     setAiError(null)
   }, [])
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {visible && (
         <motion.div
@@ -202,7 +203,7 @@ export default function DailyStandupModal({
           role="dialog"
           aria-modal="true"
           aria-label="Daily Standup"
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-start justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.div

@@ -15,6 +15,7 @@ import {
 } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { useTaskStore } from '../stores/taskStore'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 interface DeferTaskModalProps {
   isOpen: boolean
@@ -63,7 +64,7 @@ export default function DeferTaskModal({ isOpen, onClose, taskId, originDate }: 
 
   const weekDays = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -74,7 +75,7 @@ export default function DeferTaskModal({ isOpen, onClose, taskId, originDate }: 
           role="dialog"
           aria-modal="true"
           aria-label="Adiar tarefa"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.div

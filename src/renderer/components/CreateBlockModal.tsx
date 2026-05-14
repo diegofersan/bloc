@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useId, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useTimeBlockStore, type TimeBlockColor } from '../stores/timeBlockStore'
 import { COLORS } from './ColorPicker'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 interface CreateBlockModalProps {
   isOpen: boolean
@@ -12,6 +13,14 @@ interface CreateBlockModalProps {
 export default function CreateBlockModal({ isOpen, onClose, onCreated }: CreateBlockModalProps) {
   const addUntimedBlock = useTimeBlockStore((s) => s.addUntimedBlock)
   const getBlocksByTitle = useTimeBlockStore((s) => s.getBlocksByTitle)
+  const allBlocks = useTimeBlockStore((s) => s.blocks)
+  const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
+  const getDistinctBlockTitles = useTimeBlockStore((s) => s.getDistinctBlockTitles)
+  const titleListId = useId()
+  const titleSuggestions = useMemo(
+    () => getDistinctBlockTitles(),
+    [allBlocks, untimedBlocks, getDistinctBlockTitles]
+  )
   const [title, setTitle] = useState('')
   const [color, setColor] = useState<TimeBlockColor>('indigo')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -48,7 +57,7 @@ export default function CreateBlockModal({ isOpen, onClose, onCreated }: CreateB
     onClose()
   }
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -59,7 +68,7 @@ export default function CreateBlockModal({ isOpen, onClose, onCreated }: CreateB
           role="dialog"
           aria-modal="true"
           aria-label="Criar bloco"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.div
@@ -72,10 +81,16 @@ export default function CreateBlockModal({ isOpen, onClose, onCreated }: CreateB
           >
             <h3 className="text-sm font-semibold text-text-primary mb-4">Criar bloco</h3>
 
+            <datalist id={titleListId}>
+              {titleSuggestions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
             <input
               ref={inputRef}
               type="text"
               value={title}
+              list={titleListId}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {

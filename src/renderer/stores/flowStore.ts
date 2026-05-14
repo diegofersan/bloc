@@ -577,9 +577,15 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
   },
 
   getTaskElapsedSeconds: () => {
-    const { taskTimerStartedAt, taskAccumulatedSeconds } = get()
-    if (!taskTimerStartedAt) return taskAccumulatedSeconds
-    return taskAccumulatedSeconds + Math.floor((Date.now() - taskTimerStartedAt) / 1000)
+    const { taskTimerStartedAt, taskAccumulatedSeconds, currentIndex, queue } = get()
+    const slice = !taskTimerStartedAt
+      ? taskAccumulatedSeconds
+      : taskAccumulatedSeconds + Math.floor((Date.now() - taskTimerStartedAt) / 1000)
+    const live = Math.max(0, slice)
+    if (currentIndex < 0 || currentIndex >= queue.length) return live
+    const row = queue[currentIndex]
+    if (row.status !== 'active') return live
+    return Math.max(live, row.timeSpentSeconds ?? 0)
   },
 
   getSecondsRemaining: () => {

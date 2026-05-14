@@ -6,6 +6,7 @@ import { distribute, type DistributeCandidate } from '../../../../shared/distrib
 import { dedupKey } from '../../../../shared/refs'
 import type { TaskData } from '../../../../shared/types'
 import { useTaskStore } from '../../stores/taskStore'
+import { APP_OVERLAY_Z, portalToBody } from '../../utils/bodyPortal'
 
 interface Props {
   open: boolean
@@ -93,14 +94,14 @@ export default function AutoDistributeModal({ open, weekDates, onClose, onApply 
     onClose()
   }
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {open && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/30`}
           onClick={onClose}
         >
           <motion.div

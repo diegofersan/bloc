@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useId, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { TimeBlockColor } from '../../stores/timeBlockStore'
+import { useTimeBlockStore } from '../../stores/timeBlockStore'
+import { APP_OVERLAY_Z, portalToBody } from '../../utils/bodyPortal'
 
 const COLORS: TimeBlockColor[] = ['indigo', 'emerald', 'amber', 'rose', 'sky', 'violet', 'slate']
 const COLOR_CLASS: Record<TimeBlockColor, string> = {
@@ -34,6 +36,14 @@ export default function QuickBlockModal({ open, onClose, onCreate }: Props) {
   const [duration, setDuration] = useState(60)
   const [color, setColor] = useState<TimeBlockColor>('indigo')
   const inputRef = useRef<HTMLInputElement>(null)
+  const titleListId = useId()
+  const allBlocks = useTimeBlockStore((s) => s.blocks)
+  const untimedBlocks = useTimeBlockStore((s) => s.untimedBlocks)
+  const getDistinctBlockTitles = useTimeBlockStore((s) => s.getDistinctBlockTitles)
+  const titleSuggestions = useMemo(
+    () => getDistinctBlockTitles(),
+    [allBlocks, untimedBlocks, getDistinctBlockTitles]
+  )
 
   useEffect(() => {
     if (open) {
@@ -60,14 +70,14 @@ export default function QuickBlockModal({ open, onClose, onCreate }: Props) {
     onClose()
   }
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {open && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/30`}
           onClick={onClose}
         >
           <motion.form
@@ -80,10 +90,16 @@ export default function QuickBlockModal({ open, onClose, onCreate }: Props) {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-sm font-medium text-text-primary mb-3">Novo bloco</h3>
+            <datalist id={titleListId}>
+              {titleSuggestions.map((t) => (
+                <option key={t} value={t} />
+              ))}
+            </datalist>
             <input
               ref={inputRef}
               type="text"
               value={title}
+              list={titleListId}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Título"
               className="w-full mb-3 px-3 py-2 rounded-lg border border-border bg-bg-secondary text-sm text-text-primary outline-none focus:border-accent"

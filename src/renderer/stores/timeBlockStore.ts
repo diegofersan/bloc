@@ -60,6 +60,8 @@ interface TimeBlockState {
   getUntimedBlockById: (id: string) => UntimedBlock | null
   getBlockById: (id: string) => TimeBlock | UntimedBlock | null
   getBlocksByTitle: (title: string) => (TimeBlock | UntimedBlock)[]
+  /** Títulos únicos de todos os blocos (temporal + untimed), para autocomplete. Opcional: excluir um bloco ao editar o próprio. */
+  getDistinctBlockTitles: (excludeBlockId?: string) => string[]
 }
 
 export const useTimeBlockStore = create<TimeBlockState>()(
@@ -250,6 +252,32 @@ export const useTimeBlockStore = create<TimeBlockState>()(
           if (b.title.trim() === target) matches.push(b)
         }
         return matches
+      },
+
+      getDistinctBlockTitles: (excludeBlockId) => {
+        const state = get()
+        const seen = new Set<string>()
+        const out: string[] = []
+        const push = (raw: string) => {
+          const t = raw.trim()
+          if (!t || t.toLowerCase() === 'sem título') return
+          const k = t.toLowerCase()
+          if (seen.has(k)) return
+          seen.add(k)
+          out.push(t)
+        }
+        for (const dateBlocks of Object.values(state.blocks)) {
+          for (const b of dateBlocks) {
+            if (excludeBlockId && b.id === excludeBlockId) continue
+            push(b.title)
+          }
+        }
+        for (const b of state.untimedBlocks) {
+          if (excludeBlockId && b.id === excludeBlockId) continue
+          push(b.title)
+        }
+        out.sort((a, b) => a.localeCompare(b, 'pt'))
+        return out
       }
     }),
     {

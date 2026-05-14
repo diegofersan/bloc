@@ -14,6 +14,7 @@ import {
   parseISO
 } from 'date-fns'
 import { pt } from 'date-fns/locale'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 interface DeferBlockModalProps {
   isOpen: boolean
@@ -60,7 +61,7 @@ export default function DeferBlockModal({ isOpen, onClose, onSelectDate, blockDa
 
   const weekDays = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -71,7 +72,7 @@ export default function DeferBlockModal({ isOpen, onClose, onSelectDate, blockDa
           role="dialog"
           aria-modal="true"
           aria-label="Adiar bloco"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.div

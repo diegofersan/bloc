@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 interface ConfirmDialogProps {
   visible: boolean
@@ -44,7 +45,7 @@ export default function ConfirmDialog({
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [visible, onCancel])
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {visible && (
         <motion.div
@@ -55,7 +56,7 @@ export default function ConfirmDialog({
           role="dialog"
           aria-modal="true"
           aria-label={title}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-center justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onCancel}
         >
           <motion.div

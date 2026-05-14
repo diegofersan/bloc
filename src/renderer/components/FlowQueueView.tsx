@@ -73,12 +73,29 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     const val = parseInt(estimateInput, 10)
     if (!isNaN(val) && val > 0) {
       updateTaskEstimate(editingEstimate.blockKey, editingEstimate.taskId, val)
-      // Sync queue
       const flowState = useFlowStore.getState()
+      const liveElapsed = flowState.getTaskElapsedSeconds()
+      const idx = editingEstimate.queueIndex
       const newQueue = flowState.queue.map((q, i) =>
-        i === editingEstimate.queueIndex ? { ...q, estimatedMinutes: val } : q
+        i === idx ? { ...q, estimatedMinutes: val, timeSpentSeconds: liveElapsed } : q
       )
-      useFlowStore.setState({ queue: newQueue })
+      const row = flowState.queue[idx]
+      const isActiveSession =
+        flowState.started &&
+        idx === flowState.currentIndex &&
+        row?.status === 'active'
+      if (isActiveSession) {
+        const now = Date.now()
+        const anchor =
+          flowState.phase === 'working' && !flowState.isPaused ? now : null
+        useFlowStore.setState({
+          queue: newQueue,
+          taskAccumulatedSeconds: liveElapsed,
+          taskTimerStartedAt: anchor
+        })
+      } else {
+        useFlowStore.setState({ queue: newQueue })
+      }
     }
     setEditingEstimate(null)
     setEstimateInput('')

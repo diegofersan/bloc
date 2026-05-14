@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { format } from 'date-fns'
 import { useTaskStore } from '../stores/taskStore'
+import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
 
 export default function QuickCaptureOverlay({
   visible,
@@ -59,7 +60,7 @@ export default function QuickCaptureOverlay({
     }
   }
 
-  return (
+  return portalToBody(
     <AnimatePresence>
       {visible && (
         <motion.div
@@ -70,7 +71,7 @@ export default function QuickCaptureOverlay({
           role="dialog"
           aria-modal="true"
           aria-label="Captura rápida de distracção"
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm"
+          className={`fixed inset-0 ${APP_OVERLAY_Z} flex items-start justify-center bg-black/40 backdrop-blur-sm`}
           onClick={onClose}
         >
           <motion.div
