@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow } from '../electron-api'
 import {
   checkICloudAvailability,
   readDayFile,

@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain } from '../electron-api'
 import { startOAuthFlow, isAuthenticated, clearTokens } from '../services/googleAuth'
 import {
   listCalendars,

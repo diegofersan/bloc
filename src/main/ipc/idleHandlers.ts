@@ -1,4 +1,4 @@
-import { powerMonitor, BrowserWindow } from 'electron'
+import { powerMonitor, BrowserWindow } from '../electron-api'
 
 type IdleState = 'active' | 'warning' | 'idle'
 

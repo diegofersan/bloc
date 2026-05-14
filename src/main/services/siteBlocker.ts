@@ -2,7 +2,7 @@ import { createServer, Server } from 'http'
 import { execSync } from 'child_process'
 import { existsSync, writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
-import { app } from 'electron'
+import { app } from '../electron-api'
 
 const PAC_PORT = 7828
 const PAC_HOST = '127.0.0.1'

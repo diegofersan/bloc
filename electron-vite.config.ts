@@ -17,7 +17,8 @@ function sharedJsToTs(): Plugin {
     async resolveId(source, importer) {
       if (!source.endsWith('.js')) return null
       if (!importer) return null
-      const isInShared = importer.startsWith(sharedDir + '/') || importer.startsWith(sharedDir + '\\')
+      const isInShared =
+        importer.startsWith(sharedDir + '/') || importer.startsWith(sharedDir + '\\')
       if (!isInShared) return null
       const candidate = source.replace(/\.js$/, '.ts')
       return this.resolve(candidate, importer, { skipSelf: true })

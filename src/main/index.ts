@@ -1,22 +1,35 @@
-import { app, BrowserWindow, shell, globalShortcut, Tray, nativeImage, ipcMain, nativeTheme, Menu } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { spawn } from 'child_process'
 import { tmpdir } from 'os'
+import {
+  app,
+  BrowserWindow,
+  shell,
+  globalShortcut,
+  Tray,
+  nativeImage,
+  ipcMain,
+  nativeTheme,
+  Menu,
+  mainRequire
+} from './electron-api'
 import { is } from '@electron-toolkit/utils'
-import pkg from 'electron-updater'
-const { autoUpdater } = pkg
 import { registerSyncHandlers } from './ipc/syncHandlers'
 import { registerSiteBlockerHandlers } from './ipc/siteBlockerHandlers'
 import { registerGoogleCalendarHandlers } from './ipc/googleCalendarHandlers'
-import { registerFileMusicHandlers } from './ipc/fileMusicHandlers'
+import { registerFileMusicHandlers, registerFlowAudioSchemePrivileged, registerFlowAudioProtocol } from './ipc/fileMusicHandlers'
 import { startIdleMonitor } from './ipc/idleHandlers'
+
+const { autoUpdater } = mainRequire('electron-updater') as typeof import('electron-updater')
 
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (!gotTheLock) {
   app.quit()
 } else {
+  registerFlowAudioSchemePrivileged()
+
   let mainWindow: BrowserWindow | null = null
   let tray: Tray | null = null
 
@@ -205,6 +218,7 @@ rm -rf "$TEMP_DIR"
   })
 
   app.whenReady().then(() => {
+    registerFlowAudioProtocol()
     registerSyncHandlers()
     registerSiteBlockerHandlers()
     registerGoogleCalendarHandlers()

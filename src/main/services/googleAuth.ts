@@ -1,6 +1,5 @@
 /// <reference types="electron-vite/node" />
-import { BrowserWindow, safeStorage } from 'electron'
-import { app } from 'electron'
+import { BrowserWindow, safeStorage, app } from '../electron-api'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { createServer, type Server } from 'http'

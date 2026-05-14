@@ -1,4 +1,4 @@
-import { ipcMain, app } from 'electron'
+import { ipcMain, app } from '../electron-api'
 import {
   startPacServer,
   stopPacServer,
