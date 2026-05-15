@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { Play, Pause, Square, SkipForward } from 'lucide-react'
+import { Play, Pause, Square, SkipForward, Music, VolumeX } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useFlowStore } from '../stores/flowStore'
+import { useSettingsStore } from '../stores/settingsStore'
 import { usePomodoroStore } from '../stores/pomodoroStore'
 import { playWorkDoneSound, playBreakDoneSound, playCountdownTick } from '../services/notificationSound'
 import { alertWorkDone, alertBreakDone } from '../services/transitionAlert'
@@ -30,6 +31,9 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
   const secondsRemaining = useFlowStore((s) => s.secondsRemaining)
   const completedPomodoros = useFlowStore((s) => s.completedPomodoros)
   const breakDuration = usePomodoroStore((s) => s.breakDuration)
+  const flowMusicFolderPath = useSettingsStore((s) => s.flowMusicFolderPath)
+  const flowMusicDuringFlow = useSettingsStore((s) => s.flowMusicDuringFlow)
+  const setFlowMusicDuringFlow = useSettingsStore((s) => s.setFlowMusicDuringFlow)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -93,6 +97,23 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
         <span className={`text-xs font-medium tabular-nums ${phaseColor}`}>
           {formatTime(remaining)}
         </span>
+        {flowMusicFolderPath ? (
+          <button
+            type="button"
+            onClick={() => setFlowMusicDuringFlow(!flowMusicDuringFlow)}
+            className="p-0.5 rounded hover:bg-bg-hover transition-colors"
+            aria-label={
+              flowMusicDuringFlow ? 'Desligar música de fundo no Fluxo' : 'Ligar música de fundo no Fluxo'
+            }
+            title={flowMusicDuringFlow ? 'Só alertas sonoros' : 'Incluir música da pasta'}
+          >
+            {flowMusicDuringFlow ? (
+              <Music size={11} className={phaseColor} />
+            ) : (
+              <VolumeX size={11} className="text-text-muted" />
+            )}
+          </button>
+        ) : null}
         {!isOnBreak && (
           <button
             onClick={skipCurrentTask}
@@ -142,6 +163,23 @@ export default function FlowTimer({ compact }: FlowTimerProps) {
       </div>
 
       <div className="flex items-center gap-0.5">
+        {flowMusicFolderPath ? (
+          <button
+            type="button"
+            onClick={() => setFlowMusicDuringFlow(!flowMusicDuringFlow)}
+            className="p-1.5 rounded hover:bg-bg-hover transition-colors"
+            aria-label={
+              flowMusicDuringFlow ? 'Desligar música de fundo no Fluxo' : 'Ligar música de fundo no Fluxo'
+            }
+            title={flowMusicDuringFlow ? 'Só alertas sonoros (transições Pomodoro mantêm-se)' : 'Tocar música da pasta durante o foco'}
+          >
+            {flowMusicDuringFlow ? (
+              <Music size={14} className={`${phaseColor} hover:opacity-90`} />
+            ) : (
+              <VolumeX size={14} className="text-text-muted hover:text-text-secondary" />
+            )}
+          </button>
+        ) : null}
         {!isOnBreak && (
           <button
             onClick={skipCurrentTask}

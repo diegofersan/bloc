@@ -27,6 +27,8 @@ interface SettingsState {
   flowMusicFolderPath: string | null
   /** Ordem aleatória na lista de ficheiros da pasta. */
   flowMusicShuffle: boolean
+  /** Música de fundo no Flow; alertas sonoros Pomodoro mantêm-se. */
+  flowMusicDuringFlow: boolean
   setProvider: (provider: AIProvider) => void
   setApiKey: (key: string) => void
   setModel: (model: string) => void
@@ -38,6 +40,7 @@ interface SettingsState {
   setHideEmptyBlocks: (v: boolean) => void
   setFlowMusicFolderPath: (path: string | null) => void
   setFlowMusicShuffle: (v: boolean) => void
+  setFlowMusicDuringFlow: (v: boolean) => void
   isConfigured: () => boolean
 }
 
@@ -55,6 +58,7 @@ export const useSettingsStore = create<SettingsState>()(
       hideEmptyBlocks: false,
       flowMusicFolderPath: null,
       flowMusicShuffle: true,
+      flowMusicDuringFlow: true,
       setProvider: (provider) => {
         set({ provider, model: DEFAULT_MODELS[provider] })
       },
@@ -97,6 +101,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setFlowMusicShuffle: (v) => {
         set({ flowMusicShuffle: v })
+      },
+
+      setFlowMusicDuringFlow: (v) => {
+        set({ flowMusicDuringFlow: v })
       },
 
       isConfigured: () => {

@@ -44,6 +44,7 @@ function computeFlowMusicVolume(opts: {
 export default function FlowLocalMusic() {
   const folderPath = useSettingsStore((s) => s.flowMusicFolderPath)
   const shufflePreferred = useSettingsStore((s) => s.flowMusicShuffle)
+  const flowMusicDuringFlow = useSettingsStore((s) => s.flowMusicDuringFlow)
 
   const isActive = useFlowStore((s) => s.isActive)
   const started = useFlowStore((s) => s.started)
@@ -63,6 +64,7 @@ export default function FlowLocalMusic() {
 
   const shouldAudiblePlay = Boolean(
     folderPath &&
+      flowMusicDuringFlow &&
       playlist.length > 0 &&
       isActive &&
       started &&
@@ -138,7 +140,7 @@ export default function FlowLocalMusic() {
   // Atualizar volume em tempo real (fade-out últimos segundos precisa de sub-segundo).
   useEffect(() => {
     if (!folderPath || playlist.length === 0 || !started || !isActive) return
-    if (phase !== 'working' || isPaused) return
+    if (phase !== 'working' || isPaused || !flowMusicDuringFlow) return
 
     let raf = 0
     let last = performance.now()
@@ -148,8 +150,14 @@ export default function FlowLocalMusic() {
       last = now
 
       const s = useFlowStore.getState()
+      const musicOn = useSettingsStore.getState().flowMusicDuringFlow
       const audible =
-        s.isActive && s.started && !s.isPaused && s.phase === 'working' && playlist.length > 0
+        musicOn &&
+        s.isActive &&
+        s.started &&
+        !s.isPaused &&
+        s.phase === 'working' &&
+        playlist.length > 0
 
       if (audible && fadeAccumMsRef.current < FADE_MS) {
         fadeAccumMsRef.current += dt
@@ -165,7 +173,7 @@ export default function FlowLocalMusic() {
 
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [folderPath, playlist.length, started, isActive, phase, isPaused])
+  }, [folderPath, playlist.length, started, isActive, phase, isPaused, flowMusicDuringFlow])
 
   useEffect(() => {
     const audio = audioRef.current

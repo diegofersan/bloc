@@ -46,8 +46,10 @@ export default function SettingsView() {
     setConfettiOnComplete,
     flowMusicFolderPath,
     flowMusicShuffle,
+    flowMusicDuringFlow,
     setFlowMusicFolderPath,
     setFlowMusicShuffle,
+    setFlowMusicDuringFlow,
   } = useSettingsStore()
   const { blockedSites, blockDuringPomodoro, addSite, removeSite, setBlockDuringPomodoro } = useSiteBlockerStore()
   const {
@@ -417,6 +419,30 @@ export default function SettingsView() {
               <motion.div
                 className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
                 animate={{ x: flowMusicShuffle ? 16 : 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between mt-4">
+            <div className="pr-4">
+              <label className="text-sm font-medium text-text-secondary">Música de fundo no Fluxo</label>
+              <p className="text-xs text-text-muted mt-0.5">
+                Liga ou desliga durante o Fluxo no temporizador; os sons das transições Pomodoro mantêm-se sempre.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!flowMusicFolderPath}
+              onClick={() => setFlowMusicDuringFlow(!flowMusicDuringFlow)}
+              className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${
+                flowMusicDuringFlow && flowMusicFolderPath ? 'bg-accent' : 'bg-bg-tertiary'
+              } ${!flowMusicFolderPath ? 'opacity-40 cursor-not-allowed' : ''}`}
+              aria-label={flowMusicDuringFlow ? 'Música de fundo ligada' : 'Só alertas sonoros'}
+            >
+              <motion.div
+                className="absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm"
+                animate={{ x: flowMusicDuringFlow && flowMusicFolderPath ? 16 : 0 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
               />
             </button>
