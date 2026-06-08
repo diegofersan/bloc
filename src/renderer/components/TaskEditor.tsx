@@ -36,12 +36,18 @@ function findParentId(tasks: Task[], targetId: string): string | null {
 export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
   const { addTask, removeTask, insertTaskAfter, insertSubtaskAfter, removeSubtask, moveTask, copyTask, addManualSubtask, indentTaskAsSubtask, unindentTask, getResolvedTask, removeTaskRef } = useTaskStore()
   const EMPTY_REFS: import('../stores/taskStore').TaskRef[] = useMemo(() => [], [])
-  // For composite keys (date__block__id), also show refs from the base date
-  const baseDate = useMemo(() => {
+  // For composite keys (date__block__id), only show refs targeted at this block.
+  // For plain-day keys, show only refs without a targetBlockId (legacy bucket).
+  const { baseDate, currentBlockId } = useMemo(() => {
     const idx = date.indexOf('__block__')
-    return idx !== -1 ? date.substring(0, idx) : date
+    if (idx === -1) return { baseDate: date, currentBlockId: undefined as string | undefined }
+    return { baseDate: date.substring(0, idx), currentBlockId: date.substring(idx + '__block__'.length) }
   }, [date])
-  const taskRefs = useTaskStore((s) => s.taskRefs[baseDate]) ?? EMPTY_REFS
+  const allRefsForDate = useTaskStore((s) => s.taskRefs[baseDate]) ?? EMPTY_REFS
+  const taskRefs = useMemo(() => {
+    if (currentBlockId) return allRefsForDate.filter((r) => r.targetBlockId === currentBlockId)
+    return allRefsForDate.filter((r) => !r.targetBlockId)
+  }, [allRefsForDate, currentBlockId])
   // Subscribe to origin dates so we re-render when linked tasks change
   const allTasks = useTaskStore((s) => s.tasks)
   const resolvedRefs = useMemo(() => {
@@ -295,6 +301,8 @@ export default function TaskEditor({ date, tasks, onToast }: TaskEditorProps) {
                 task={linkedTask}
                 date={ref.originDate}
                 isLinked
+                linkedRef={ref}
+                linkedRefDate={baseDate}
                 onUnlink={() => removeTaskRef(baseDate, ref.id)}
                 isFocused={activeTaskId === linkedTask.id}
                 activeTaskId={activeTaskId}

@@ -243,6 +243,12 @@ export default function App() {
     return () => cleanupSync()
   }, [])
 
+  // Assign targetBlockId to legacy TaskRefs that were stored without one.
+  // Backs up the onRehydrateStorage hook in case timed blocks hadn't loaded yet.
+  useEffect(() => {
+    useTaskStore.getState().migrateTaskRefsToBlocks()
+  }, [])
+
   // Google Calendar periodic sync
   const gcalConnected = useGoogleCalendarStore((s) => s.isConnected)
   const gcalCalendarId = useGoogleCalendarStore((s) => s.selectedCalendarId)

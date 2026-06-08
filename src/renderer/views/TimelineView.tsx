@@ -683,7 +683,7 @@ export default function TimelineView() {
             {activeTab === 'timeline' ? (
               <DayView date={`${date!}__block__${activeBlockId}`} embedded />
             ) : activeTab === 'pending' ? (
-              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} />
+              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} currentBlockId={activeBlockId ?? undefined} />
             ) : (
               <DistractionSidebar date={date!} showHeader={false} />
             )}
@@ -774,7 +774,7 @@ export default function TimelineView() {
 
           <div className="flex-1 min-h-0">
             {detailRightTab === 'pending' ? (
-              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} />
+              <PendingTasksPanel currentDate={date!} projectTitle={activeBlock?.title} currentBlockId={activeBlockId ?? undefined} />
             ) : (
               <DistractionSidebar date={date!} showHeader={false} />
             )}

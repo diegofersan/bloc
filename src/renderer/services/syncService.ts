@@ -19,6 +19,8 @@ interface TaskRefData {
   originTaskId: string
   titleSnapshot: string
   addedAt: number
+  targetBlockId?: string
+  estimatedMinutes?: number
 }
 
 interface DistractionData {
@@ -120,7 +122,9 @@ function taskRefToData(ref: TaskRef): TaskRefData {
     originDate: ref.originDate,
     originTaskId: ref.originTaskId,
     titleSnapshot: title,
-    addedAt: ref.addedAt
+    addedAt: ref.addedAt,
+    ...(ref.targetBlockId ? { targetBlockId: ref.targetBlockId } : {}),
+    ...(ref.estimatedMinutes !== undefined ? { estimatedMinutes: ref.estimatedMinutes } : {})
   }
 }
 
@@ -141,7 +145,9 @@ function dataToTaskRef(data: TaskRefData): TaskRef {
     originDate: data.originDate,
     originTaskId: data.originTaskId,
     titleSnapshot: data.titleSnapshot,
-    addedAt: data.addedAt
+    addedAt: data.addedAt,
+    ...(data.targetBlockId ? { targetBlockId: data.targetBlockId } : {}),
+    ...(data.estimatedMinutes !== undefined ? { estimatedMinutes: data.estimatedMinutes } : {})
   }
 }
 

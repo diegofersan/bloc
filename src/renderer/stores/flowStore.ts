@@ -65,6 +65,14 @@ interface FlowState {
   getCurrentItem: () => FlowQueueItem | null
   getTaskElapsedSeconds: () => number
   getSecondsRemaining: () => number
+  /**
+   * Sum every flow-tracked second worked on a given origin task — direct hits
+   * (item.taskId === originTaskId) plus all linked-ref instances that resolve
+   * back to that origin.
+   */
+  getTotalTimeSpentForOriginTask: (originTaskId: string) => number
+  /** Flow-tracked seconds for a specific TaskRef instance on its target date. */
+  getTimeSpentForRef: (refDate: string, refId: string) => number
 }
 
 function buildQueue(date: string): FlowQueueItem[] {
@@ -92,7 +100,9 @@ function buildQueue(date: string): FlowQueueItem[] {
     }
   }
 
-  // Include linked task references — match to block by project title
+  // Include linked task references — bind each to its explicit targetBlockId.
+  // Refs without one fall back to a same-title match (legacy behavior) so
+  // pre-migration data still surfaces somewhere.
   const refs = taskStore.taskRefs[date] || []
   const originBlocks = useTimeBlockStore.getState().blocks
   for (const ref of refs) {
@@ -100,27 +110,29 @@ function buildQueue(date: string): FlowQueueItem[] {
     const resolvedTask = taskStore.getResolvedTask(ref)
     if (!resolvedTask || resolvedTask.completed) continue
 
-    // Find the block where the original task lives to get its project title
-    const originBaseDate = ref.originDate.match(/^(.+)__block__(.+)$/)?.[1]
-    const originBlockId = ref.originDate.match(/^(.+)__block__(.+)$/)?.[2]
-    let projectTitle: string | null = null
-    if (originBaseDate && originBlockId) {
-      const originBlock = (originBlocks[originBaseDate] || []).find((b) => b.id === originBlockId)
-      projectTitle = originBlock?.title?.trim().toLowerCase() || null
+    let targetBlock = ref.targetBlockId
+      ? sorted.find((b) => b.id === ref.targetBlockId)
+      : undefined
+
+    if (!targetBlock) {
+      // Legacy fallback: match by title of the origin block. Drop silently if
+      // there's no match — better than landing in a random block.
+      const originMatch = ref.originDate.match(/^(.+)__block__(.+)$/)
+      const originBaseDate = originMatch?.[1]
+      const originBlockId = originMatch?.[2]
+      const projectTitle = originBaseDate && originBlockId
+        ? (originBlocks[originBaseDate] || []).find((b) => b.id === originBlockId)?.title?.trim().toLowerCase()
+        : undefined
+      targetBlock = projectTitle
+        ? sorted.find((b) => b.title.trim().toLowerCase() === projectTitle)
+        : undefined
     }
 
-    // Find matching block on this date by title
-    let targetBlock = projectTitle
-      ? sorted.find((b) => b.title.trim().toLowerCase() === projectTitle)
-      : null
-    // Fallback: last block
-    if (!targetBlock && sorted.length > 0) {
-      targetBlock = sorted[sorted.length - 1]
-    }
     if (!targetBlock) continue
 
     const blockKey = `${date}__block__${targetBlock.id}`
-    const estimate = getEffectiveEstimate(resolvedTask)
+    // Per-instance estimate wins over the origin task's estimate.
+    const estimate = ref.estimatedMinutes ?? getEffectiveEstimate(resolvedTask)
     seenTaskIds.add(ref.originTaskId)
     queue.push({
       taskId: ref.id, // use ref ID so it's unique in the queue
@@ -592,6 +604,36 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
     const { expectedEndAt, secondsRemaining, isPaused } = get()
     if (isPaused || !expectedEndAt) return secondsRemaining
     return Math.max(0, Math.round((expectedEndAt - Date.now()) / 1000))
+  },
+
+  getTotalTimeSpentForOriginTask: (originTaskId: string) => {
+    const { completedByDate } = get()
+    const taskRefsByDate = useTaskStore.getState().taskRefs
+    // Pre-build a set of ref IDs that resolve to this origin task.
+    const matchingRefIds = new Set<string>()
+    for (const refs of Object.values(taskRefsByDate)) {
+      for (const r of refs) {
+        if (r.originTaskId === originTaskId) matchingRefIds.add(r.id)
+      }
+    }
+    let total = 0
+    for (const items of Object.values(completedByDate)) {
+      for (const it of items) {
+        if (it.taskId === originTaskId || matchingRefIds.has(it.taskId)) {
+          total += it.timeSpentSeconds
+        }
+      }
+    }
+    return total
+  },
+
+  getTimeSpentForRef: (refDate: string, refId: string) => {
+    const items = get().completedByDate[refDate] || []
+    let total = 0
+    for (const it of items) {
+      if (it.taskId === refId) total += it.timeSpentSeconds
+    }
+    return total
   }
 }), {
   name: 'bloc-flow',

@@ -62,6 +62,10 @@ export interface TaskRefData {
   originTaskId: string
   titleSnapshot: string
   addedAt: number
+  /** Id of the timed block on the target day this ref is attached to. */
+  targetBlockId?: string
+  /** Estimate for this instance (falls back to origin task's estimate). */
+  estimatedMinutes?: number
 }
 
 export interface DayFileData {
@@ -158,7 +162,9 @@ function unescapeRefTitle(s: string): string {
 }
 
 function serializeRef(r: TaskRefData): string {
-  const meta = `@refId:${r.id} @origin:${r.originDate} @taskId:${r.originTaskId} @added:${r.addedAt}`
+  let meta = `@refId:${r.id} @origin:${r.originDate} @taskId:${r.originTaskId} @added:${r.addedAt}`
+  if (r.targetBlockId) meta += ` @target:${r.targetBlockId}`
+  if (r.estimatedMinutes) meta += ` @instEst:${r.estimatedMinutes}`
   return `- "${escapeRefTitle(r.titleSnapshot)}" <!--${meta}-->`
 }
 
@@ -439,7 +445,9 @@ function parseRefLine(line: string): TaskRefData | null {
     originDate: meta.origin,
     originTaskId: meta.taskId,
     titleSnapshot,
-    addedAt: meta.added ? parseInt(meta.added, 10) : Date.now()
+    addedAt: meta.added ? parseInt(meta.added, 10) : Date.now(),
+    ...(meta.target ? { targetBlockId: meta.target } : {}),
+    ...(meta.instEst ? { estimatedMinutes: parseInt(meta.instEst, 10) } : {})
   }
 }
 

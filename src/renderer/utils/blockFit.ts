@@ -33,9 +33,10 @@ function findTaskInTree(list: Task[], id: string): Task | null {
  *
  * Combines:
  *  1. Explicit tasks at storeKey `<date>__block__<id>`.
- *  2. Tasks resolved via `taskRefs[<date>]` whose origin is an untimed block
- *     sharing the same (case-insensitive trimmed) title — only pending ones
- *     (not completed, not wontDo).
+ *  2. Tasks resolved via `taskRefs[<date>]` — refs with `targetBlockId === block.id`
+ *     always count here; refs without a `targetBlockId` (pre-migration / dayless
+ *     bucket) only count when the origin is an untimed block whose title matches
+ *     this block's title. Only pending tasks (not completed, not wontDo) count.
  *
  * Pure: caller passes the relevant slice of state.
  */
@@ -49,23 +50,31 @@ export function collectBlockTasks(
 ): Task[] {
   const blockKey = `${block.date}__block__${block.id}`
   const explicit = state.tasks[blockKey] ?? []
+  const refs = state.taskRefs[block.date] ?? []
+  if (refs.length === 0) return [...explicit]
 
   const titleNorm = block.title?.trim().toLowerCase()
-  if (!titleNorm) return [...explicit]
+  const matchingUntimedIds = titleNorm
+    ? new Set(
+        untimedBlocks
+          .filter((ub) => ub.title.trim().toLowerCase() === titleNorm)
+          .map((ub) => ub.id)
+      )
+    : new Set<string>()
 
-  const matchingUntimedIds = new Set(
-    untimedBlocks
-      .filter((ub) => ub.title.trim().toLowerCase() === titleNorm)
-      .map((ub) => ub.id)
-  )
-  if (matchingUntimedIds.size === 0) return [...explicit]
-
-  const refs = state.taskRefs[block.date] ?? []
   const refTasks: Task[] = []
   for (const ref of refs) {
-    if (!ref.originDate.startsWith('__block__')) continue
-    const untimedId = ref.originDate.slice('__block__'.length)
-    if (!matchingUntimedIds.has(untimedId)) continue
+    let belongs = false
+    if (ref.targetBlockId) {
+      belongs = ref.targetBlockId === block.id
+    } else if (
+      ref.originDate.startsWith('__block__') &&
+      matchingUntimedIds.size > 0
+    ) {
+      const untimedId = ref.originDate.slice('__block__'.length)
+      belongs = matchingUntimedIds.has(untimedId)
+    }
+    if (!belongs) continue
     const originList = state.tasks[ref.originDate]
     if (!originList) continue
     const found = findTaskInTree(originList, ref.originTaskId)

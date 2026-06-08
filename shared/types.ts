@@ -87,6 +87,10 @@ export interface TaskRefData {
   titleSnapshot: string
   /** Timestamp the ref was added. */
   addedAt: number
+  /** Id of the timed block on the target day this ref is attached to. */
+  targetBlockId?: string
+  /** Estimate for this instance (falls back to origin task's estimate). */
+  estimatedMinutes?: number
 }
 
 export interface DayFileData {

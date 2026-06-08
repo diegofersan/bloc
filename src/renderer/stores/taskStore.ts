@@ -38,6 +38,17 @@ export interface TaskRef {
    */
   titleSnapshot?: string
   addedAt: number         // timestamp quando a referência foi criada
+  /**
+   * Id of the timed block on the target day this ref is attached to.
+   * undefined = pre-migration (will be migrated on first load) or a day with
+   * no timed blocks. When set, the ref only surfaces in that specific block.
+   */
+  targetBlockId?: string
+  /**
+   * Estimate for this instance. Falls back to the origin task's estimate when
+   * undefined. Editing here never touches the origin task.
+   */
+  estimatedMinutes?: number
 }
 
 export type DistractionStatus = 'pending' | 'dismissed' | 'converted'
@@ -147,16 +158,29 @@ interface TaskState {
   getPendingDistractionCount: () => number
   getDatesWithPendingDistractions: () => string[]
   cleanOldDistractions: (daysToKeep?: number) => void
-  createTaskRef: (originDate: string, taskId: string, targetDate: string) => void
+  createTaskRef: (
+    originDate: string,
+    taskId: string,
+    targetDate: string,
+    targetBlockId?: string
+  ) => void
   toggleTaskRef: (refDate: string, refId: string) => void
   removeTaskRef: (refDate: string, refId: string) => void
+  /** Set the per-instance estimate of a TaskRef. Pass undefined to clear. */
+  updateTaskRefEstimate: (refDate: string, refId: string, minutes: number | undefined) => void
   getResolvedTask: (ref: TaskRef) => Task | null
   /**
    * For a TimeBlock with given title scheduled on `blockDate`, ensure a TaskRef
    * exists in `taskRefs[blockDate]` for each pending top-level task of any
    * untimed block sharing the same (case-insensitive) title. Idempotent.
+   * When `targetBlockId` is provided, new refs are bound to that block.
    */
-  reconcileBlockRefs: (blockTitle: string, blockDate: string) => void
+  reconcileBlockRefs: (blockTitle: string, blockDate: string, targetBlockId?: string) => void
+  /**
+   * One-shot: assigns `targetBlockId` to any TaskRef missing one, picking the
+   * earliest-starting timed block of each target date. Idempotent.
+   */
+  migrateTaskRefsToBlocks: () => void
   /** Pending tasks across the archive, grouped by their parent block. */
   getPendingByBlock: () => PendingGroup[]
   /** All tasks grouped by block title (cross-date). Untimed blocks without tasks still appear. */
@@ -836,16 +860,31 @@ export const useTaskStore = create<TaskState>()(
         return dates
       },
 
-      createTaskRef: (originDate, taskId, targetDate) => {
+      createTaskRef: (originDate, taskId, targetDate, targetBlockId) => {
         const state = get()
         const dateTasks = state.tasks[originDate]
         if (!dateTasks) return
         const task = findTaskInList(dateTasks, taskId)
         if (!task) return
 
-        // Skip duplicates so the same (origin, task) → target combo is idempotent.
+        // If the caller didn't bind to a specific block, default to the
+        // earliest-starting timed block of the target day. Keeps refs out of
+        // the "unassigned" bucket and out of the all-blocks fallback.
+        let resolvedBlockId = targetBlockId
+        if (!resolvedBlockId) {
+          const dayBlocks = useTimeBlockStore.getState().blocks[targetDate] || []
+          if (dayBlocks.length > 0) {
+            resolvedBlockId = [...dayBlocks].sort((a, b) => a.startTime - b.startTime)[0].id
+          }
+        }
+
+        // Idempotent per (origin, task, targetBlockId): same task can attach to
+        // different blocks of the same day, but not twice in the same block.
         const existing = (state.taskRefs[targetDate] ?? []).find(
-          (r) => r.originDate === originDate && r.originTaskId === taskId
+          (r) =>
+            r.originDate === originDate &&
+            r.originTaskId === taskId &&
+            r.targetBlockId === resolvedBlockId
         )
         if (existing) return
 
@@ -855,7 +894,8 @@ export const useTaskStore = create<TaskState>()(
           originDate,
           originTaskId: taskId,
           titleSnapshot: task.text,
-          addedAt: Date.now()
+          addedAt: Date.now(),
+          ...(resolvedBlockId ? { targetBlockId: resolvedBlockId } : {})
         }
 
         const now = Date.now()
@@ -875,7 +915,7 @@ export const useTaskStore = create<TaskState>()(
         }))
       },
 
-      reconcileBlockRefs: (blockTitle, blockDate) => {
+      reconcileBlockRefs: (blockTitle, blockDate, targetBlockId) => {
         const titleKey = blockTitle.trim().toLowerCase()
         if (!titleKey) return
         const tbState = useTimeBlockStore.getState()
@@ -884,10 +924,20 @@ export const useTaskStore = create<TaskState>()(
         )
         if (matchingUntimed.length === 0) return
 
+        // Resolve target block id from title if caller didn't pass one.
+        let resolvedTargetBlockId = targetBlockId
+        if (!resolvedTargetBlockId) {
+          const dayBlocks = tbState.blocks[blockDate] || []
+          const match = dayBlocks.find((b) => b.title.trim().toLowerCase() === titleKey)
+          if (match) resolvedTargetBlockId = match.id
+        }
+
         const state = get()
         const existingRefs = state.taskRefs[blockDate] ?? []
         const existingPairs = new Set(
-          existingRefs.map((r) => `${r.originDate}::${r.originTaskId}`)
+          existingRefs.map(
+            (r) => `${r.originDate}::${r.originTaskId}::${r.targetBlockId ?? ''}`
+          )
         )
 
         const now = Date.now()
@@ -900,7 +950,7 @@ export const useTaskStore = create<TaskState>()(
           if (!originTasks) continue
           for (const task of originTasks) {
             if (task.completed || task.wontDo) continue
-            const pairKey = `${originDate}::${task.id}`
+            const pairKey = `${originDate}::${task.id}::${resolvedTargetBlockId ?? ''}`
             if (existingPairs.has(pairKey)) continue
             const refId = crypto.randomUUID()
             newRefs.push({
@@ -908,7 +958,8 @@ export const useTaskStore = create<TaskState>()(
               originDate,
               originTaskId: task.id,
               titleSnapshot: task.text,
-              addedAt: now
+              addedAt: now,
+              ...(resolvedTargetBlockId ? { targetBlockId: resolvedTargetBlockId } : {})
             })
             taskUpdates.push({ originDate, taskId: task.id, refId })
             existingPairs.add(pairKey)
@@ -1004,6 +1055,48 @@ export const useTaskStore = create<TaskState>()(
           },
           taskRefs: newTaskRefs
         }))
+      },
+
+      updateTaskRefEstimate: (refDate, refId, minutes) => {
+        set((s) => {
+          const refs = s.taskRefs[refDate]
+          if (!refs) return s
+          const idx = refs.findIndex((r) => r.id === refId)
+          if (idx === -1) return s
+          const updated = refs.slice()
+          const ref = updated[idx]
+          if (minutes === undefined) {
+            const { estimatedMinutes: _drop, ...rest } = ref
+            updated[idx] = rest as TaskRef
+          } else {
+            updated[idx] = { ...ref, estimatedMinutes: minutes }
+          }
+          return { taskRefs: { ...s.taskRefs, [refDate]: updated } }
+        })
+      },
+
+      migrateTaskRefsToBlocks: () => {
+        const tbBlocks = useTimeBlockStore.getState().blocks
+        set((s) => {
+          let changed = false
+          const updated: Record<string, TaskRef[]> = {}
+          for (const [targetDate, refs] of Object.entries(s.taskRefs)) {
+            const dayBlocks = tbBlocks[targetDate] || []
+            if (dayBlocks.length === 0) {
+              updated[targetDate] = refs
+              continue
+            }
+            const earliest = [...dayBlocks].sort((a, b) => a.startTime - b.startTime)[0]
+            const newList = refs.map((r) => {
+              if (r.targetBlockId) return r
+              changed = true
+              return { ...r, targetBlockId: earliest.id }
+            })
+            updated[targetDate] = newList
+          }
+          if (!changed) return s
+          return { taskRefs: updated }
+        })
       },
 
       getResolvedTask: (ref) => {
@@ -1328,7 +1421,7 @@ export const useTaskStore = create<TaskState>()(
     }),
     {
       name: 'bloc-tasks',
-      version: 3,
+      version: 4,
       partialize: (state) => {
         const cleanedTasks: Record<string, Task[]> = {}
         for (const [date, taskList] of Object.entries(state.tasks)) {
@@ -1377,7 +1470,22 @@ export const useTaskStore = create<TaskState>()(
 
         // v2 → v3: estimatedMinutes field added (optional, no migration needed)
 
+        // v3 → v4: TaskRef.targetBlockId and TaskRef.estimatedMinutes added.
+        // The actual assignment of targetBlockId happens after rehydrate via
+        // migrateTaskRefsToBlocks(), because timed blocks live in another store.
+
         return data
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        // Defer to ensure useTimeBlockStore has also hydrated.
+        queueMicrotask(() => {
+          try {
+            state.migrateTaskRefsToBlocks()
+          } catch {
+            // best-effort; will retry on next rehydrate
+          }
+        })
       }
     }
   )

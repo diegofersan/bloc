@@ -114,7 +114,9 @@ export default function WeekDayColumn({ date }: Props) {
     const foreignByBlock = new Map<string, TaskRef[]>()
     const unbranched: TaskRef[] = []
     for (const r of refsForDay) {
-      const blockId = originBlockIdFor(r, tasks)
+      // Prefer the explicit target binding; fall back to the origin block for
+      // legacy refs that pre-date targetBlockId.
+      const blockId = r.targetBlockId ?? originBlockIdFor(r, tasks)
       if (!blockId) unbranched.push(r)
       else if (dayBlockIds.has(blockId)) {
         const arr = ownByBlock.get(blockId) ?? []
@@ -196,11 +198,10 @@ export default function WeekDayColumn({ date }: Props) {
     setColumnDragOver(false)
     if (!isDragging) return
     if (dragKind === 'pending' && dragTaskId && dragOriginDate) {
-      // No native "ref-into-specific-block" model — just create a ref into the day.
-      // The ref will visually attach to the origin's block; if it happens to be
-      // the same block id, it groups under that card automatically.
+      // Bind the ref to the specific block we dropped on, so it only shows
+      // there (not in every block of the day).
       if (dragOriginDate !== date) {
-        createTaskRef(dragOriginDate, dragTaskId, date)
+        createTaskRef(dragOriginDate, dragTaskId, date, blockId)
       }
     } else if (dragKind === 'task' && dragTaskId && dragOriginDate) {
       const fromKey = dragOriginBlockId

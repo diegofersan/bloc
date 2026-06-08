@@ -4,11 +4,24 @@ import { getSuggestedEstimate, formatEstimate } from '../utils/taskEstimates'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useTaskStore, type Task } from '../stores/taskStore'
+import { useTaskStore, type Task, type TaskRef } from '../stores/taskStore'
+import { useFlowStore } from '../stores/flowStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { expandTaskV2 } from '../services/expansionPipeline'
 import DeferTaskModal from './DeferTaskModal'
 import { APP_OVERLAY_Z, portalToBody } from '../utils/bodyPortal'
+
+/** Format seconds as compact "Xh Ym" / "Ym Ss" / "Ss". */
+function formatSeconds(total: number): string {
+  if (!total || total < 0) return '—'
+  const s = Math.floor(total)
+  if (s < 60) return `${s}s`
+  const minutes = Math.floor(s / 60)
+  const hours = Math.floor(minutes / 60)
+  const remMin = minutes % 60
+  if (hours > 0) return remMin > 0 ? `${hours}h ${remMin}m` : `${hours}h`
+  return `${minutes}m`
+}
 
 const MAX_DEPTH = 2
 
@@ -60,6 +73,9 @@ interface EditableTaskRowProps {
   isLinked?: boolean
   onUnlink?: () => void
   onBreakOut?: (subtaskId: string) => void
+  /** When this row represents a TaskRef, the ref and its target date. */
+  linkedRef?: TaskRef
+  linkedRefDate?: string
 }
 
 export default function EditableTaskRow({
@@ -87,9 +103,11 @@ export default function EditableTaskRow({
   onSubtaskUnindent,
   isLinked,
   onUnlink,
-  onBreakOut
+  onBreakOut,
+  linkedRef,
+  linkedRefDate
 }: EditableTaskRowProps) {
-  const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding, updateTaskEstimate } = useTaskStore()
+  const { toggleTask, removeTask, updateTaskText, addSubtasks, setTaskExpanding, updateTaskEstimate, updateTaskRefEstimate } = useTaskStore()
   const { provider, apiKey, model, isConfigured } = useSettingsStore()
   const [hovered, setHovered] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,10 +148,23 @@ export default function EditableTaskRow({
     }
   }, [editingEstimate])
 
-  const effectiveEstimate = depth === 0 ? task.estimatedMinutes : undefined
-  const suggestedEstimate = depth === 0 ? getSuggestedEstimate(task) : undefined
+  const instanceEstimate = linkedRef?.estimatedMinutes
+  const rawEffectiveEstimate = depth === 0
+    ? (instanceEstimate ?? task.estimatedMinutes)
+    : undefined
+  const effectiveEstimate = rawEffectiveEstimate
+  const suggestedEstimate = depth === 0 && !instanceEstimate
+    ? getSuggestedEstimate(task)
+    : undefined
 
   function handleEstimateClick() {
+    if (linkedRef && linkedRefDate) {
+      // Acceptance flow on linked rows always opens the input — the suggestion
+      // belongs to the origin task, not this instance.
+      setEstimateInput((instanceEstimate ?? task.estimatedMinutes)?.toString() || '')
+      setEditingEstimate(true)
+      return
+    }
     if (suggestedEstimate && !task.estimatedMinutes) {
       // Accept suggestion
       updateTaskEstimate(date, task.id, suggestedEstimate)
@@ -148,7 +179,11 @@ export default function EditableTaskRow({
     if (estimateInput === '') {
       // Don't clear existing estimate on empty input
     } else if (!isNaN(val) && val > 0) {
-      updateTaskEstimate(date, task.id, val)
+      if (linkedRef && linkedRefDate) {
+        updateTaskRefEstimate(linkedRefDate, linkedRef.id, val)
+      } else {
+        updateTaskEstimate(date, task.id, val)
+      }
     }
     setEditingEstimate(false)
     if (andCreateBelow) {
@@ -397,22 +432,11 @@ export default function EditableTaskRow({
                 <Info size={iconSize} className="text-text-muted hover:text-text-secondary transition-colors" aria-hidden="true" />
               </button>
               {showInfo && (
-                <div className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-lg bg-bg-secondary border border-border shadow-lg p-3 text-xs text-text-secondary space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Criada</span>
-                    <span>{format(new Date(task.createdAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-muted">Instanciada</span>
-                    <span>{(task.instanceHistory?.length ?? 0) + 1}×</span>
-                  </div>
-                  {task.completed && task.completedAt && (
-                    <div className="flex justify-between">
-                      <span className="text-text-muted">Concluída</span>
-                      <span>{format(new Date(task.completedAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
-                    </div>
-                  )}
-                </div>
+                <InfoPopover
+                  task={task}
+                  linkedRef={linkedRef}
+                  linkedRefDate={linkedRefDate}
+                />
               )}
             </div>
           )}
@@ -556,5 +580,64 @@ export default function EditableTaskRow({
           </div>
         )}
     </motion.div>
+  )
+}
+
+function InfoPopover({
+  task,
+  linkedRef,
+  linkedRefDate
+}: {
+  task: Task
+  linkedRef?: TaskRef
+  linkedRefDate?: string
+}) {
+  const totalSeconds = useFlowStore((s) => s.getTotalTimeSpentForOriginTask(task.id))
+  const instanceSeconds = useFlowStore((s) =>
+    linkedRef && linkedRefDate ? s.getTimeSpentForRef(linkedRefDate, linkedRef.id) : 0
+  )
+  const isRef = !!linkedRef
+  const instanceEstimate = linkedRef?.estimatedMinutes
+  const originEstimate = task.estimatedMinutes
+
+  return (
+    <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-lg bg-bg-secondary border border-border shadow-lg p-3 text-xs text-text-secondary space-y-1.5">
+      <div className="flex justify-between">
+        <span className="text-text-muted">Criada</span>
+        <span>{format(new Date(task.createdAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-text-muted">Instanciada</span>
+        <span>{(task.instanceHistory?.length ?? 0) + 1}×</span>
+      </div>
+      {task.completed && task.completedAt && (
+        <div className="flex justify-between">
+          <span className="text-text-muted">Concluída</span>
+          <span>{format(new Date(task.completedAt), "d MMM yyyy, HH:mm", { locale: pt })}</span>
+        </div>
+      )}
+      {isRef && (
+        <div className="flex justify-between">
+          <span className="text-text-muted">Estimativa (instância)</span>
+          <span>{instanceEstimate ? formatEstimate(instanceEstimate) : '—'}</span>
+        </div>
+      )}
+      {isRef && originEstimate !== undefined && originEstimate !== instanceEstimate && (
+        <div className="flex justify-between">
+          <span className="text-text-muted">Estimativa (original)</span>
+          <span>{formatEstimate(originEstimate)}</span>
+        </div>
+      )}
+      {isRef && (
+        <div className="flex justify-between">
+          <span className="text-text-muted">Tempo nesta instância</span>
+          <span>{formatSeconds(instanceSeconds)}</span>
+        </div>
+      )}
+      <div className="flex justify-between">
+        <span className="text-text-muted">Tempo total</span>
+        <span>{formatSeconds(totalSeconds)}</span>
+      </div>
+    </div>
   )
 }

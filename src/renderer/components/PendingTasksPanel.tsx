@@ -9,9 +9,11 @@ import { useTimeBlockStore } from '../stores/timeBlockStore'
 interface PendingTasksPanelProps {
   currentDate: string
   projectTitle?: string
+  /** When set, refs are attached to this specific timed block of currentDate. */
+  currentBlockId?: string
 }
 
-export default function PendingTasksPanel({ currentDate, projectTitle }: PendingTasksPanelProps) {
+export default function PendingTasksPanel({ currentDate, projectTitle, currentBlockId }: PendingTasksPanelProps) {
   const [search, setSearch] = useState('')
   const tasks = useTaskStore((s) => s.tasks)
   const taskRefs = useTaskStore((s) => s.taskRefs)
@@ -71,9 +73,13 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
       }
     }
 
-    // Build set of origin task IDs already referenced on currentDate
+    // Build set of origin task IDs already referenced on this (date, block).
+    // When no block is in context, fall back to "any ref on this day".
     const refsOnDate = taskRefs[currentDate] || []
-    const linkedIds = new Set(refsOnDate.map((r) => r.originTaskId))
+    const refsInScope = currentBlockId
+      ? refsOnDate.filter((r) => r.targetBlockId === currentBlockId)
+      : refsOnDate
+    const linkedIds = new Set(refsInScope.map((r) => r.originTaskId))
 
     // Filter out already-linked tasks
     const filtered = result.filter((item) => !linkedIds.has(item.task.id))
@@ -102,7 +108,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
       backlogItems: searchedBacklog,
       grouped: Array.from(groups.entries()).sort((a, b) => b[0].localeCompare(a[0]))
     }
-  }, [tasks, taskRefs, currentDate, search, normalizedProject, allBlocks, untimedBlocks])
+  }, [tasks, taskRefs, currentDate, currentBlockId, search, normalizedProject, allBlocks, untimedBlocks])
 
   const isEmpty = grouped.length === 0 && backlogItems.length === 0
 
@@ -146,7 +152,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
                       key={item.task.id}
                       text={item.task.text}
                       subtasks={item.task.subtasks}
-                      onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
+                      onLink={() => createTaskRef(item.date, item.task.id, currentDate, currentBlockId)}
                       onDelete={() => removeTask(item.date, item.task.id)}
                     />
                   ))}
@@ -166,7 +172,7 @@ export default function PendingTasksPanel({ currentDate, projectTitle }: Pending
                       key={item.task.id}
                       text={item.task.text}
                       subtasks={item.task.subtasks}
-                      onLink={() => createTaskRef(item.date, item.task.id, currentDate)}
+                      onLink={() => createTaskRef(item.date, item.task.id, currentDate, currentBlockId)}
                       onDelete={() => removeTask(item.date, item.task.id)}
                     />
                   ))}

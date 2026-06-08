@@ -50,6 +50,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
   const moveTask = useTaskStore((s) => s.moveTask)
   const addTask = useTaskStore((s) => s.addTask)
   const updateTaskEstimate = useTaskStore((s) => s.updateTaskEstimate)
+  const updateTaskRefEstimate = useTaskStore((s) => s.updateTaskRefEstimate)
 
   // Inline estimate editing
   const [editingEstimate, setEditingEstimate] = useState<{ queueIndex: number; blockKey: string; taskId: string } | null>(null)
@@ -72,7 +73,14 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     if (!editingEstimate) return
     const val = parseInt(estimateInput, 10)
     if (!isNaN(val) && val > 0) {
-      updateTaskEstimate(editingEstimate.blockKey, editingEstimate.taskId, val)
+      // The queue uses ref.id for linked tasks, not the origin task.id — route
+      // the write to the ref so the per-instance estimate is what gets stored.
+      const isRef = taskRefs.some((r) => r.id === editingEstimate.taskId)
+      if (isRef) {
+        updateTaskRefEstimate(date, editingEstimate.taskId, val)
+      } else {
+        updateTaskEstimate(editingEstimate.blockKey, editingEstimate.taskId, val)
+      }
       const flowState = useFlowStore.getState()
       const liveElapsed = flowState.getTaskElapsedSeconds()
       const idx = editingEstimate.queueIndex
@@ -99,7 +107,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
     }
     setEditingEstimate(null)
     setEstimateInput('')
-  }, [editingEstimate, estimateInput, updateTaskEstimate])
+  }, [editingEstimate, estimateInput, updateTaskEstimate, updateTaskRefEstimate, taskRefs, date])
 
   // Blocks sorted by time
   const sortedBlocks = useMemo(
