@@ -79,6 +79,26 @@ function getOrCreateDay(date: string): DayFileData {
   return readDay(date) ?? emptyDay(date)
 }
 
+/**
+ * Untimed blocks (projects) live in blocks.md with storeKey `__block__<id>`.
+ * Timed blocks live inside the day file under their own block_id. Tasks added
+ * to an untimed block must therefore be written to blocks.md, not to the day
+ * file — otherwise they end up in `data.blockTasks[untimedId]` of a specific
+ * day, where the app's PendingTasksPanel/project-view can't find them.
+ */
+function isUntimedBlock(blockId: string): boolean {
+  const data = readBlocks()
+  return data.untimedBlocks.some((b) => b.id === blockId)
+}
+
+function appendToUntimedBlock(blockId: string, task: TaskData): void {
+  const data = readBlocks()
+  const key = `__block__${blockId}`
+  if (!data.tasks[key]) data.tasks[key] = []
+  data.tasks[key].push(task)
+  writeBlocks(data)
+}
+
 function findTask(tasks: TaskData[], taskId: string): TaskData | null {
   for (const t of tasks) {
     if (t.id === taskId) return t
@@ -197,6 +217,11 @@ CRITICAL RULES for tasks and subtasks:
 4. Max nesting depth is 2 (parent → subtask → sub-subtask). Don't go deeper.
 5. Subtasks inherit the parent's block — they live in the same block_id.
 6. Use update_task to rename or re-estimate a task instead of delete+create.
+7. block_id can refer to a TIMED block (on a specific date, from read_day's
+   timeBlocks) or an UNTIMED block (project, from list_blocks). The task
+   tools auto-detect which: untimed → blocks.md (date ignored), timed →
+   day file. NEVER pass a date when adding tasks to a project — the tools
+   write to blocks.md and 'date' has no meaning there.
 
 The user's locale is Portuguese (PT).`
   }
@@ -256,15 +281,17 @@ server.tool(
 // create_task
 server.tool(
   'create_task',
-  'Create a new task for a given date. Optionally inside a specific time block.',
+  `Create a new task. If block_id refers to a TIMED block on a specific date, the
+task is added to that block on that day. If block_id refers to an UNTIMED block
+(project, from list_blocks), the task is added to the project in blocks.md and
+'date' is ignored. With no block_id, the task is a top-level day task.`,
   {
-    date: z.string().describe('Date in YYYY-MM-DD format'),
+    date: z.string().describe('Date in YYYY-MM-DD format (ignored when block_id is an untimed/project block)'),
     text: z.string().describe('Task text'),
-    block_id: z.string().optional().describe('Time block ID to create the task inside (optional)'),
+    block_id: z.string().optional().describe('Block ID (timed block on the date, or an untimed/project block)'),
     estimated_minutes: z.number().optional().describe('Estimated duration in minutes (optional)')
   },
   async ({ date, text, block_id, estimated_minutes }) => {
-    const data = getOrCreateDay(date)
     const task: TaskData = {
       id: uuidv4(),
       text,
@@ -274,6 +301,17 @@ server.tool(
       subtasks: []
     }
 
+    if (block_id && isUntimedBlock(block_id)) {
+      appendToUntimedBlock(block_id, task)
+      return {
+        content: [{
+          type: 'text',
+          text: `Created task "${text}" (id: ${task.id}) in project ${block_id}`
+        }]
+      }
+    }
+
+    const data = getOrCreateDay(date)
     if (block_id) {
       if (!data.blockTasks) data.blockTasks = {}
       if (!data.blockTasks[block_id]) data.blockTasks[block_id] = []
@@ -365,35 +403,17 @@ server.tool(
 server.tool(
   'add_subtask',
   `Add a subtask to an existing parent task. The parent becomes a section separator
-in the UI — its own estimatedMinutes is ignored once it has subtasks.`,
+in the UI — its own estimatedMinutes is ignored once it has subtasks.
+Searches in this order: the given day file (if date provided), then blocks.md
+(untimed/project tasks). 'date' is optional when the parent lives in a project.`,
   {
-    date: z.string().describe('Date in YYYY-MM-DD format'),
+    date: z.string().optional().describe('Date in YYYY-MM-DD format (optional when parent is in an untimed/project block)'),
     parent_task_id: z.string().describe('ID of the parent task'),
     text: z.string().describe('Subtask text'),
     estimated_minutes: z.number().optional().describe('Estimated duration in minutes (optional)'),
-    block_id: z.string().optional().describe('Block ID if the parent lives inside a block (optional)')
+    block_id: z.string().optional().describe('Block ID if the parent lives inside a block (timed or untimed)')
   },
   async ({ date, parent_task_id, text, estimated_minutes, block_id }) => {
-    const data = readDay(date)
-    if (!data) {
-      return { content: [{ type: 'text', text: `No data found for ${date}` }], isError: true }
-    }
-
-    let parent: TaskData | null = null
-    if (block_id && data.blockTasks?.[block_id]) {
-      parent = findTask(data.blockTasks[block_id], parent_task_id)
-    }
-    if (!parent) parent = findTask(data.tasks, parent_task_id)
-    if (!parent && data.blockTasks) {
-      for (const list of Object.values(data.blockTasks)) {
-        parent = findTask(list, parent_task_id)
-        if (parent) break
-      }
-    }
-    if (!parent) {
-      return { content: [{ type: 'text', text: `Parent task ${parent_task_id} not found on ${date}` }], isError: true }
-    }
-
     const subtask: TaskData = {
       id: uuidv4(),
       text,
@@ -402,14 +422,55 @@ in the UI — its own estimatedMinutes is ignored once it has subtasks.`,
       createdAt: Date.now(),
       subtasks: []
     }
-    parent.subtasks.push(subtask)
-    writeDay(data)
+
+    // 1. Try the day file when a date is provided.
+    if (date) {
+      const data = readDay(date)
+      if (data) {
+        let parent: TaskData | null = null
+        if (block_id && data.blockTasks?.[block_id]) {
+          parent = findTask(data.blockTasks[block_id], parent_task_id)
+        }
+        if (!parent) parent = findTask(data.tasks, parent_task_id)
+        if (!parent && data.blockTasks) {
+          for (const list of Object.values(data.blockTasks)) {
+            parent = findTask(list, parent_task_id)
+            if (parent) break
+          }
+        }
+        if (parent) {
+          parent.subtasks.push(subtask)
+          writeDay(data)
+          return {
+            content: [{
+              type: 'text',
+              text: `Added subtask "${text}" (id: ${subtask.id}) to "${parent.text}" on ${date}`
+            }]
+          }
+        }
+      }
+    }
+
+    // 2. Fall back to blocks.md (untimed projects).
+    const blocksData = readBlocks()
+    for (const [storeKey, list] of Object.entries(blocksData.tasks)) {
+      const parent = findTask(list, parent_task_id)
+      if (parent) {
+        parent.subtasks.push(subtask)
+        writeBlocks(blocksData)
+        const projectId = storeKey.startsWith('__block__') ? storeKey.slice('__block__'.length) : storeKey
+        return {
+          content: [{
+            type: 'text',
+            text: `Added subtask "${text}" (id: ${subtask.id}) to "${parent.text}" in project ${projectId}`
+          }]
+        }
+      }
+    }
 
     return {
-      content: [{
-        type: 'text',
-        text: `Added subtask "${text}" (id: ${subtask.id}) to "${parent.text}" on ${date}`
-      }]
+      content: [{ type: 'text', text: `Parent task ${parent_task_id} not found` }],
+      isError: true
     }
   }
 )
@@ -444,16 +505,19 @@ server.tool(
   `Create a parent task plus a tree of subtasks in a single atomic write.
 Use this instead of multiple create_task calls when the user lists steps. When the
 parent has subtasks, do NOT set estimated_minutes on the parent — the sum of
-subtask estimates is the source of truth.`,
+subtask estimates is the source of truth.
+
+If block_id refers to an UNTIMED block (project, from list_blocks), the parent
+is added to the project in blocks.md and 'date' is ignored. Otherwise the parent
+is created on 'date' (top-level or in the given timed block_id).`,
   {
-    date: z.string().describe('Date in YYYY-MM-DD format'),
+    date: z.string().describe('Date in YYYY-MM-DD format (ignored when block_id is an untimed/project block)'),
     text: z.string().describe('Parent task text'),
     subtasks: z.array(subtaskSchema).describe('Array of subtasks (may be nested)'),
-    block_id: z.string().optional().describe('Time block ID to create inside (optional)'),
+    block_id: z.string().optional().describe('Block ID (timed block on the date, or an untimed/project block)'),
     estimated_minutes: z.number().optional().describe('Estimate for the parent — only set if there are no subtasks (optional)')
   },
   async ({ date, text, subtasks, block_id, estimated_minutes }) => {
-    const data = getOrCreateDay(date)
     const parent: TaskData = {
       id: uuidv4(),
       text,
@@ -463,6 +527,17 @@ subtask estimates is the source of truth.`,
       subtasks: subtasks.map(buildSubtaskTree)
     }
 
+    if (block_id && isUntimedBlock(block_id)) {
+      appendToUntimedBlock(block_id, parent)
+      return {
+        content: [{
+          type: 'text',
+          text: `Created "${text}" (id: ${parent.id}) with ${subtasks.length} subtask(s) in project ${block_id}`
+        }]
+      }
+    }
+
+    const data = getOrCreateDay(date)
     if (block_id) {
       if (!data.blockTasks) data.blockTasks = {}
       if (!data.blockTasks[block_id]) data.blockTasks[block_id] = []
