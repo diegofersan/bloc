@@ -26,6 +26,9 @@ if (process.contextIsolated) {
       focusWindow: () => {
         ipcRenderer.send('focus-window')
       },
+      quitApp: () => {
+        ipcRenderer.send('quit-app')
+      },
       alertAttention: () => {
         ipcRenderer.send('alert-attention')
       },

@@ -27,12 +27,14 @@ import { useGoogleCalendarStore } from './stores/googleCalendarStore'
 import GoogleSyncStatusBadge from './components/GoogleSyncStatusBadge'
 import { useFlowStore } from './stores/flowStore'
 import FlowLocalMusic from './components/FlowLocalMusic'
+import QuitButton from './components/QuitButton'
 
 declare global {
   interface Window {
     bloc?: {
       getAppVersion: () => string
       focusWindow: () => void
+      quitApp: () => void
       alertAttention: () => void
       onNavigate: (callback: (path: string) => void) => () => void
       onQuickCapture: (callback: () => void) => () => void
@@ -467,6 +469,7 @@ export default function App() {
         />
         <GoogleSyncStatusBadge />
         <FlowLocalMusic />
+        <QuitButton />
       </div>
     </HashRouter>
   )

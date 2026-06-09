@@ -27,6 +27,17 @@ function formatTime(minutes: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+function findTaskDeep(list: Task[], id: string): Task | undefined {
+  for (const t of list) {
+    if (t.id === id) return t
+    if (t.subtasks && t.subtasks.length > 0) {
+      const sub = findTaskDeep(t.subtasks, id)
+      if (sub) return sub
+    }
+  }
+  return undefined
+}
+
 interface FlowQueueViewProps {
   date: string
 }
@@ -283,15 +294,27 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
 
   const handleToggleTask = useCallback(
     (blockKey: string, taskId: string) => {
-      // Check if this is a linked task reference
+      // Check if this is a linked task reference (headers of refs use ref.id)
       const isRef = taskRefs.some((r) => r.id === taskId)
       if (isRef) {
         toggleTaskRef(date, taskId)
-      } else {
+        return
+      }
+      // Fast path: the task lives in the block we expected.
+      const directList = allTasks[blockKey]
+      if (directList && findTaskDeep(directList, taskId)) {
         toggleTask(blockKey, taskId)
+        return
+      }
+      // Subtask coming from a linked-ref's origin tree: scan all storeKeys.
+      for (const [storeKey, list] of Object.entries(allTasks)) {
+        if (findTaskDeep(list as Task[], taskId)) {
+          toggleTask(storeKey, taskId)
+          return
+        }
       }
     },
-    [toggleTask, toggleTaskRef, taskRefs, date]
+    [toggleTask, toggleTaskRef, taskRefs, date, allTasks]
   )
 
   // Add task per block
@@ -430,16 +453,50 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                   )}
                   {items.map(({ item, queueIndex }, positionInBlock) => {
                     const blockTasks = allTasks[item.blockKey] ?? EMPTY_TASKS
-                    let task = blockTasks.find((t) => t.id === item.taskId)
+                    let task = findTaskDeep(blockTasks, item.taskId)
                     // Resolve linked task references
                     const ref = !task ? taskRefs.find((r) => r.id === item.taskId) : null
                     const linkedTask = ref ? getResolvedTask(ref) : null
                     if (!task && linkedTask) task = linkedTask
+                    // Subtask of a ref: id is the real subtask's id, search the
+                    // origin's task tree across all stores.
+                    if (!task) {
+                      for (const list of Object.values(allTasks)) {
+                        const found = findTaskDeep(list as Task[], item.taskId)
+                        if (found) { task = found; break }
+                      }
+                    }
                     if (!task && (item.status === 'completed' || item.status === 'skipped')) return null
 
                     const taskLabel = task?.text || 'Tarefa'
+
+                    // ── Header row (parent-as-separator) ──
+                    if (item.isHeader) {
+                      const childItems = items.filter(({ item: it }) => it.parentTaskId === item.taskId)
+                      const spentSec = childItems.reduce((sum, { item: it }) => sum + (it.timeSpentSeconds || 0), 0)
+                      const spentMin = Math.round(spentSec / 60)
+                      const total = item.aggregateEstimateMinutes ?? 0
+                      const showSpent = spentSec > 0
+                      return (
+                        <div
+                          key={`hdr-${item.blockId}-${item.taskId}`}
+                          className="flex items-center gap-2 px-3 pt-3 pb-1 select-none"
+                        >
+                          <span className="flex-1 text-[10px] uppercase tracking-wider text-text-muted/80 truncate">
+                            {taskLabel}
+                          </span>
+                          {total > 0 && (
+                            <span className="shrink-0 text-[10px] text-text-muted tabular-nums">
+                              {showSpent ? `${spentMin}m / ${total}m` : formatEstimate(total)}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    }
+
                     const isActive = queueIndex === currentIndex
                     const isCompleted = item.status === 'completed' || task?.completed
+                    const isSubtask = (item.depth ?? 0) > 0
                     const isDragging = dragQueueIndex === queueIndex
                     const isDropHere =
                       dropTarget?.blockId === block.id && dropTarget.position === positionInBlock && dragQueueIndex !== null && !isDragging
@@ -483,7 +540,7 @@ export default function FlowQueueView({ date }: FlowQueueViewProps) {
                           isCompleted ? 'opacity-40' : ''
                         } ${isDragging ? 'opacity-20' : ''} ${
                           isDropHere ? 'ring-1 ring-white/30' : ''
-                        }`}
+                        } ${isSubtask ? 'ml-5' : ''}`}
                         style={{
                           backgroundColor: blockColor + Math.round(bgOpacity * 255).toString(16).padStart(2, '0')
                         }}

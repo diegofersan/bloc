@@ -290,9 +290,30 @@ rm -rf "$TEMP_DIR"
 
     tray = new Tray(createTrayIcon())
     tray.setTitle('')
+    tray.setToolTip('Bloc')
+    tray.setContextMenu(Menu.buildFromTemplate([
+      {
+        label: 'Mostrar Bloc',
+        click: () => {
+          if (!mainWindow) {
+            createWindow()
+            return
+          }
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      },
+      { type: 'separator' },
+      { label: 'Sair do Bloc', accelerator: 'Command+Q', click: () => app.quit() }
+    ]))
 
     ipcMain.on('get-app-version', (event) => {
       event.returnValue = app.getVersion()
+    })
+
+    ipcMain.on('quit-app', () => {
+      app.quit()
     })
 
     ipcMain.on('pomodoro-tray-update', (_event, data: { time: string | null; status: string | null }) => {

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus, Clock, Info } from 'lucide-react'
+import { Sparkles, X, Loader2, Plus, CalendarClock, Link2, ListPlus, Clock, Info, FolderOpen } from 'lucide-react'
 import { getSuggestedEstimate, formatEstimate } from '../utils/taskEstimates'
 import { format, parseISO } from 'date-fns'
 import { pt } from 'date-fns/locale'
@@ -305,6 +305,9 @@ export default function EditableTaskRow({
   const hasSubtasks = task.subtasks.length > 0
   const allSubtasksDone = hasSubtasks && task.subtasks.every(s => s.completed)
   const suggestComplete = allSubtasksDone && !task.completed
+  // Parent with at least one subtask renders as a section separator: no estimate
+  // input (sum of children wins), tighter type, folder icon instead of checkbox.
+  const isParentSeparator = depth === 0 && hasSubtasks
 
   return (
     <motion.div
@@ -321,41 +324,52 @@ export default function EditableTaskRow({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <button
-          onClick={() => toggleTask(date, task.id)}
-          role="checkbox"
-          aria-checked={task.completed}
-          aria-label="Marcar como concluída"
-          className={`shrink-0 w-4 h-4 ${depth > 0 ? 'rounded-sm' : 'rounded-full'} border-[1.5px] flex items-center justify-center transition-all ${
-            task.completed
-              ? 'bg-success border-success opacity-100'
-              : suggestComplete
-                ? 'border-success opacity-100 animate-pulse'
-                : hovered || isFocused
-                  ? 'border-border-light opacity-100'
-                  : 'border-border opacity-40'
-          }`}
-        >
-          {task.completed && (
-            <motion.svg
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              aria-hidden="true"
-              width="8"
-              height="8"
-              viewBox="0 0 12 12"
-              fill="none"
-            >
-              <path
-                d="M2 6L5 9L10 3"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </motion.svg>
-          )}
-        </button>
+        {isParentSeparator ? (
+          <span
+            className={`shrink-0 w-4 h-4 flex items-center justify-center ${
+              task.completed || allSubtasksDone ? 'text-success' : 'text-text-muted/60'
+            }`}
+            aria-hidden="true"
+          >
+            <FolderOpen size={14} />
+          </span>
+        ) : (
+          <button
+            onClick={() => toggleTask(date, task.id)}
+            role="checkbox"
+            aria-checked={task.completed}
+            aria-label="Marcar como concluída"
+            className={`shrink-0 w-4 h-4 ${depth > 0 ? 'rounded-sm' : 'rounded-full'} border-[1.5px] flex items-center justify-center transition-all ${
+              task.completed
+                ? 'bg-success border-success opacity-100'
+                : suggestComplete
+                  ? 'border-success opacity-100 animate-pulse'
+                  : hovered || isFocused
+                    ? 'border-border-light opacity-100'
+                    : 'border-border opacity-40'
+            }`}
+          >
+            {task.completed && (
+              <motion.svg
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                aria-hidden="true"
+                width="8"
+                height="8"
+                viewBox="0 0 12 12"
+                fill="none"
+              >
+                <path
+                  d="M2 6L5 9L10 3"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </motion.svg>
+            )}
+          </button>
+        )}
 
         {hasSubtasks && (
           <span className={`text-xs tabular-nums ${suggestComplete ? 'text-success font-medium' : 'text-text-muted'}`} aria-label={`${completedCount} de ${task.subtasks.length} subtarefas concluídas`}>
@@ -378,17 +392,23 @@ export default function EditableTaskRow({
           onBlur={handleBlur}
           aria-label="Editar tarefa"
           title={task.wontDo && task.wontDoAt ? `Marcada como não-fazer em ${new Date(task.wontDoAt).toLocaleDateString('pt-PT')}` : undefined}
-          className={`task-editor-input flex-1 text-sm bg-transparent border-none outline-none ${
+          className={`task-editor-input flex-1 bg-transparent border-none outline-none ${
+            isParentSeparator
+              ? 'text-xs uppercase tracking-wider text-text-secondary'
+              : 'text-sm'
+          } ${
             task.completed
               ? 'line-through text-text-muted'
               : task.wontDo
                 ? 'line-through text-text-muted/70 italic'
-                : 'text-text-primary'
+                : isParentSeparator
+                  ? ''
+                  : 'text-text-primary'
           }`}
           spellCheck={false}
         />
 
-        {depth === 0 && !task.completed && (editingEstimate ? (
+        {depth === 0 && !task.completed && !isParentSeparator && (editingEstimate ? (
           <input
             ref={estimateInputRef}
             type="text"

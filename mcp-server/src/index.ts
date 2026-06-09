@@ -184,6 +184,20 @@ CRITICAL RULES for time blocks:
 5. When the user asks to schedule something without specifying a time, ask them what time they want — do NOT guess or default to 00:00.
 6. When the user asks to delete or modify a block, call read_day first to get the block ID.
 
+CRITICAL RULES for tasks and subtasks:
+1. A task with subtasks acts as a section separator in the UI. Its own
+   estimatedMinutes is ignored — the sum of subtask estimates wins. Do NOT
+   set estimatedMinutes on a parent that has subtasks unless the user
+   explicitly asks.
+2. Break a task into subtasks when (a) the user lists multiple distinct
+   steps, (b) the task is ≥45 min and the steps are obvious, or (c) the
+   user explicitly asks. Otherwise create a single flat task.
+3. Prefer create_task_with_subtasks for atomic creation (one write, full
+   tree). Use add_subtask only when adding to an existing parent.
+4. Max nesting depth is 2 (parent → subtask → sub-subtask). Don't go deeper.
+5. Subtasks inherit the parent's block — they live in the same block_id.
+6. Use update_task to rename or re-estimate a task instead of delete+create.
+
 The user's locale is Portuguese (PT).`
   }
 )
@@ -344,6 +358,173 @@ server.tool(
 
     writeDay(data)
     return { content: [{ type: 'text', text: `Deleted task ${task_id} from ${date}` }] }
+  }
+)
+
+// add_subtask
+server.tool(
+  'add_subtask',
+  `Add a subtask to an existing parent task. The parent becomes a section separator
+in the UI — its own estimatedMinutes is ignored once it has subtasks.`,
+  {
+    date: z.string().describe('Date in YYYY-MM-DD format'),
+    parent_task_id: z.string().describe('ID of the parent task'),
+    text: z.string().describe('Subtask text'),
+    estimated_minutes: z.number().optional().describe('Estimated duration in minutes (optional)'),
+    block_id: z.string().optional().describe('Block ID if the parent lives inside a block (optional)')
+  },
+  async ({ date, parent_task_id, text, estimated_minutes, block_id }) => {
+    const data = readDay(date)
+    if (!data) {
+      return { content: [{ type: 'text', text: `No data found for ${date}` }], isError: true }
+    }
+
+    let parent: TaskData | null = null
+    if (block_id && data.blockTasks?.[block_id]) {
+      parent = findTask(data.blockTasks[block_id], parent_task_id)
+    }
+    if (!parent) parent = findTask(data.tasks, parent_task_id)
+    if (!parent && data.blockTasks) {
+      for (const list of Object.values(data.blockTasks)) {
+        parent = findTask(list, parent_task_id)
+        if (parent) break
+      }
+    }
+    if (!parent) {
+      return { content: [{ type: 'text', text: `Parent task ${parent_task_id} not found on ${date}` }], isError: true }
+    }
+
+    const subtask: TaskData = {
+      id: uuidv4(),
+      text,
+      completed: false,
+      estimatedMinutes: estimated_minutes,
+      createdAt: Date.now(),
+      subtasks: []
+    }
+    parent.subtasks.push(subtask)
+    writeDay(data)
+
+    return {
+      content: [{
+        type: 'text',
+        text: `Added subtask "${text}" (id: ${subtask.id}) to "${parent.text}" on ${date}`
+      }]
+    }
+  }
+)
+
+// create_task_with_subtasks
+type SubtaskInput = {
+  text: string
+  estimated_minutes?: number
+  subtasks?: SubtaskInput[]
+}
+const subtaskSchema: z.ZodType<SubtaskInput> = z.lazy(() =>
+  z.object({
+    text: z.string(),
+    estimated_minutes: z.number().optional(),
+    subtasks: z.array(subtaskSchema).optional()
+  })
+)
+
+function buildSubtaskTree(input: SubtaskInput): TaskData {
+  return {
+    id: uuidv4(),
+    text: input.text,
+    completed: false,
+    estimatedMinutes: input.estimated_minutes,
+    createdAt: Date.now(),
+    subtasks: (input.subtasks ?? []).map(buildSubtaskTree)
+  }
+}
+
+server.tool(
+  'create_task_with_subtasks',
+  `Create a parent task plus a tree of subtasks in a single atomic write.
+Use this instead of multiple create_task calls when the user lists steps. When the
+parent has subtasks, do NOT set estimated_minutes on the parent — the sum of
+subtask estimates is the source of truth.`,
+  {
+    date: z.string().describe('Date in YYYY-MM-DD format'),
+    text: z.string().describe('Parent task text'),
+    subtasks: z.array(subtaskSchema).describe('Array of subtasks (may be nested)'),
+    block_id: z.string().optional().describe('Time block ID to create inside (optional)'),
+    estimated_minutes: z.number().optional().describe('Estimate for the parent — only set if there are no subtasks (optional)')
+  },
+  async ({ date, text, subtasks, block_id, estimated_minutes }) => {
+    const data = getOrCreateDay(date)
+    const parent: TaskData = {
+      id: uuidv4(),
+      text,
+      completed: false,
+      estimatedMinutes: subtasks.length > 0 ? undefined : estimated_minutes,
+      createdAt: Date.now(),
+      subtasks: subtasks.map(buildSubtaskTree)
+    }
+
+    if (block_id) {
+      if (!data.blockTasks) data.blockTasks = {}
+      if (!data.blockTasks[block_id]) data.blockTasks[block_id] = []
+      data.blockTasks[block_id].push(parent)
+    } else {
+      data.tasks.push(parent)
+    }
+
+    writeDay(data)
+    return {
+      content: [{
+        type: 'text',
+        text: `Created "${text}" (id: ${parent.id}) with ${subtasks.length} subtask(s) on ${date}${block_id ? ` in block ${block_id}` : ''}`
+      }]
+    }
+  }
+)
+
+// update_task
+server.tool(
+  'update_task',
+  'Update a task\'s text and/or estimated minutes. Pass only the fields to change.',
+  {
+    date: z.string().describe('Date in YYYY-MM-DD format'),
+    task_id: z.string().describe('Task ID (may be a subtask)'),
+    block_id: z.string().optional().describe('Block ID if the task lives inside a block (optional)'),
+    text: z.string().optional().describe('New text (optional)'),
+    estimated_minutes: z.number().nullable().optional().describe('New estimate in minutes; pass null to clear (optional)')
+  },
+  async ({ date, task_id, block_id, text, estimated_minutes }) => {
+    const data = readDay(date)
+    if (!data) {
+      return { content: [{ type: 'text', text: `No data found for ${date}` }], isError: true }
+    }
+
+    let task: TaskData | null = null
+    if (block_id && data.blockTasks?.[block_id]) {
+      task = findTask(data.blockTasks[block_id], task_id)
+    }
+    if (!task) task = findTask(data.tasks, task_id)
+    if (!task && data.blockTasks) {
+      for (const list of Object.values(data.blockTasks)) {
+        task = findTask(list, task_id)
+        if (task) break
+      }
+    }
+    if (!task) {
+      return { content: [{ type: 'text', text: `Task ${task_id} not found on ${date}` }], isError: true }
+    }
+
+    if (text !== undefined) task.text = text
+    if (estimated_minutes !== undefined) {
+      task.estimatedMinutes = estimated_minutes === null ? undefined : estimated_minutes
+    }
+
+    writeDay(data)
+    return {
+      content: [{
+        type: 'text',
+        text: `Updated task ${task_id} on ${date}`
+      }]
+    }
   }
 )
 

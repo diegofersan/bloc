@@ -4,7 +4,8 @@ import { format } from 'date-fns'
 import { useTaskStore } from './taskStore'
 import { useTimeBlockStore } from './timeBlockStore'
 import { usePomodoroStore } from './pomodoroStore'
-import { getEffectiveEstimate } from '../utils/taskEstimates'
+import { getEffectiveEstimate, sumPendingSubtaskEstimates } from '../utils/taskEstimates'
+import type { Task } from './taskStore'
 
 export interface FlowQueueItem {
   taskId: string
@@ -13,6 +14,14 @@ export interface FlowQueueItem {
   estimatedMinutes: number | null // null = open-ended
   timeSpentSeconds: number
   status: 'pending' | 'active' | 'completed' | 'skipped'
+  /** True when this row is a parent-as-separator. Not selectable, not timed. */
+  isHeader?: boolean
+  /** For subtask rows: id of the parent header in the same block. */
+  parentTaskId?: string
+  /** Nesting level for indentation: 0 = top-level / header, 1 = subtask, etc. */
+  depth?: number
+  /** For header rows: sum of pending subtask estimates (anti-double-count). */
+  aggregateEstimateMinutes?: number | null
 }
 
 export type FlowPhase = 'working' | 'break'
@@ -75,6 +84,56 @@ interface FlowState {
   getTimeSpentForRef: (refDate: string, refId: string) => number
 }
 
+/**
+ * Push a task into the flow queue. Tasks with subtasks become a non-selectable
+ * header followed by each pending leaf-subtask (depth-first). Leaf tasks push
+ * as normal selectable items.
+ */
+function pushTaskTree(
+  task: Task,
+  blockKey: string,
+  blockId: string,
+  queue: FlowQueueItem[],
+  seenTaskIds: Set<string>,
+  parentTaskId: string | undefined,
+  depth: number
+): void {
+  seenTaskIds.add(task.id)
+
+  const hasSubtasks = task.subtasks && task.subtasks.length > 0
+  if (hasSubtasks) {
+    const aggregate = sumPendingSubtaskEstimates(task)
+    queue.push({
+      taskId: task.id,
+      blockKey,
+      blockId,
+      estimatedMinutes: null,
+      aggregateEstimateMinutes: aggregate > 0 ? aggregate : null,
+      timeSpentSeconds: 0,
+      status: task.completed ? 'completed' : 'pending',
+      isHeader: true,
+      parentTaskId,
+      depth
+    })
+    for (const sub of task.subtasks) {
+      pushTaskTree(sub, blockKey, blockId, queue, seenTaskIds, task.id, depth + 1)
+    }
+    return
+  }
+
+  const estimate = getEffectiveEstimate(task)
+  queue.push({
+    taskId: task.id,
+    blockKey,
+    blockId,
+    estimatedMinutes: estimate ?? null,
+    timeSpentSeconds: 0,
+    status: task.completed ? 'completed' : 'pending',
+    ...(parentTaskId ? { parentTaskId } : {}),
+    depth
+  })
+}
+
 function buildQueue(date: string): FlowQueueItem[] {
   const taskStore = useTaskStore.getState()
   const blocks = useTimeBlockStore.getState().blocks[date] || []
@@ -87,16 +146,7 @@ function buildQueue(date: string): FlowQueueItem[] {
     const tasks = taskStore.tasks[blockKey] || []
 
     for (const task of tasks) {
-      seenTaskIds.add(task.id)
-      const estimate = getEffectiveEstimate(task)
-      queue.push({
-        taskId: task.id,
-        blockKey,
-        blockId: block.id,
-        estimatedMinutes: estimate ?? null,
-        timeSpentSeconds: 0,
-        status: task.completed ? 'completed' : 'pending'
-      })
+      pushTaskTree(task, blockKey, block.id, queue, seenTaskIds, undefined, 0)
     }
   }
 
@@ -131,17 +181,41 @@ function buildQueue(date: string): FlowQueueItem[] {
     if (!targetBlock) continue
 
     const blockKey = `${date}__block__${targetBlock.id}`
-    // Per-instance estimate wins over the origin task's estimate.
-    const estimate = ref.estimatedMinutes ?? getEffectiveEstimate(resolvedTask)
     seenTaskIds.add(ref.originTaskId)
-    queue.push({
-      taskId: ref.id, // use ref ID so it's unique in the queue
-      blockKey,
-      blockId: targetBlock.id,
-      estimatedMinutes: estimate ?? null,
-      timeSpentSeconds: 0,
-      status: 'pending'
-    })
+
+    const hasSubtasks = resolvedTask.subtasks && resolvedTask.subtasks.length > 0
+    if (hasSubtasks) {
+      // Parent: header (with the ref id so toggle/remove still target the ref)
+      const aggregate = sumPendingSubtaskEstimates(resolvedTask)
+      queue.push({
+        taskId: ref.id,
+        blockKey,
+        blockId: targetBlock.id,
+        estimatedMinutes: null,
+        aggregateEstimateMinutes: aggregate > 0 ? aggregate : null,
+        timeSpentSeconds: 0,
+        status: 'pending',
+        isHeader: true,
+        depth: 0
+      })
+      // Subtasks live on the origin task — push them as leaf items targeted
+      // at this date's block.
+      for (const sub of resolvedTask.subtasks) {
+        pushTaskTree(sub, blockKey, targetBlock.id, queue, seenTaskIds, resolvedTask.id, 1)
+      }
+    } else {
+      // Per-instance estimate wins over the origin task's estimate.
+      const estimate = ref.estimatedMinutes ?? getEffectiveEstimate(resolvedTask)
+      queue.push({
+        taskId: ref.id, // use ref ID so it's unique in the queue
+        blockKey,
+        blockId: targetBlock.id,
+        estimatedMinutes: estimate ?? null,
+        timeSpentSeconds: 0,
+        status: 'pending',
+        depth: 0
+      })
+    }
   }
 
   return queue
@@ -240,8 +314,8 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
     const { isActive, started, queue } = get()
     if (!isActive || started || queue.length === 0) return
 
-    // Find the first pending task (may not be index 0 if some were already worked on)
-    const nextIndex = queue.findIndex((q) => q.status === 'pending')
+    // Find the first pending task — headers are not timed, never selectable.
+    const nextIndex = queue.findIndex((q) => q.status === 'pending' && !q.isHeader)
     if (nextIndex === -1) return
 
     const newQueue = [...queue]
@@ -398,14 +472,16 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
     newQueue.splice(insertAt, 0, completedItem)
 
     const blockTasksRemaining = newQueue.filter(
-      (q) => q.blockId === currentBlockId && q.status === 'pending'
+      (q) => q.blockId === currentBlockId && q.status === 'pending' && !q.isHeader
     )
 
     if (blockTasksRemaining.length === 0) {
       shrinkBlockIfEarly(date, currentBlockId, newQueue)
     }
 
-    const nextIndex = newQueue.findIndex((q, i) => i >= currentIndex && q.status === 'pending')
+    const nextIndex = newQueue.findIndex(
+      (q, i) => i >= currentIndex && q.status === 'pending' && !q.isHeader
+    )
 
     if (nextIndex === -1) {
       // All done — save completed items and deactivate
@@ -458,10 +534,12 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
       timeSpentSeconds: taskElapsed
     })
 
-    // Stay within the same block
-    let nextIndex = newQueue.findIndex((q) => q.blockId === blockId && q.status === 'pending')
+    // Stay within the same block; never land on a header.
+    let nextIndex = newQueue.findIndex(
+      (q) => q.blockId === blockId && q.status === 'pending' && !q.isHeader
+    )
     if (nextIndex === -1) {
-      nextIndex = newQueue.findIndex((q) => q.status === 'pending')
+      nextIndex = newQueue.findIndex((q) => q.status === 'pending' && !q.isHeader)
     }
 
     if (nextIndex === -1) {
@@ -498,9 +576,9 @@ export const useFlowStore = create<FlowState>()(persist((set, get) => ({
       timeSpentSeconds: taskElapsed
     }
 
-    // Find first pending task in the target block
+    // Find first pending task in the target block (skip headers)
     const nextIndex = newQueue.findIndex(
-      (q) => q.blockId === blockId && q.status === 'pending'
+      (q) => q.blockId === blockId && q.status === 'pending' && !q.isHeader
     )
     if (nextIndex === -1) return
 
